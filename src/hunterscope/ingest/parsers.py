@@ -24,6 +24,8 @@ def _clean_ip(value: str | None) -> str | None:
     if not value:
         return None
     value = value.strip()
+    if value in {"-", ""}:
+        return None
     for pattern in (_IPV4_WITH_PORT, _IPV6_WITH_PORT):
         m = pattern.match(value)
         if m:
@@ -82,15 +84,38 @@ _WIN_PROCESS_IDS = {1, 4688}
 _WIN_GROUP_IDS = {4728, 4732, 4756}
 
 
+_WIN_TIME_KEYS = ("TimeCreated", "@timestamp", "EventTime", "UtcTime")
+
+
+def _win_time(rec: dict[str, Any]) -> Any:
+    """Exports differ: Winlogbeat uses TimeCreated/@timestamp, NXLog (older OTRF sets) uses EventTime."""
+    for key in _WIN_TIME_KEYS:
+        if rec.get(key):
+            return rec[key]
+    raise KeyError("no timestamp field")
+
+
+def _win_user(rec: dict[str, Any], event_id: int) -> str | None:
+    """Sysmon has `User`. Security 4624/4625 log the *target* account (Subject is the machine/SYSTEM);
+    every other Security event we handle acts as the subject."""
+    if rec.get("User"):
+        return str(rec["User"])
+    prefix = "Target" if event_id in {4624, 4625} else "Subject"
+    name = rec.get(f"{prefix}UserName")
+    if not name or name == "-":
+        return None
+    domain = rec.get(f"{prefix}DomainName")
+    return f"{domain}\\{name}" if domain and domain != "-" else str(name)
+
+
 def parse_windows(rec: dict[str, Any]) -> Event:
-    """Windows Security / Sysmon event exported as flat JSON (Winlogbeat/WEF style)."""
+    """Windows Security / Sysmon event as flat JSON (Winlogbeat/WEF/OTRF style)."""
     event_id = int(rec["EventID"])
-    user = rec.get("User") or rec.get("SubjectUserName") or rec.get("TargetUserName")
     base: dict[str, Any] = {
-        "ts": rec["TimeCreated"],
+        "ts": _win_time(rec),
         "source": "windows",
-        "user": user,
-        "host": rec.get("Computer"),
+        "user": _win_user(rec, event_id),
+        "host": rec.get("Computer") or rec.get("Hostname"),
         "ip": _clean_ip(rec.get("IpAddress")),
         "detail": {"event_id": event_id},
     }
@@ -116,7 +141,7 @@ def detect_source(rec: dict[str, Any]) -> str | None:
         return "entra"
     if "CreationTime" in rec and "Operation" in rec:
         return "ual"
-    if "EventID" in rec and "TimeCreated" in rec:
+    if "EventID" in rec and any(k in rec for k in _WIN_TIME_KEYS):
         return "windows"
     return None
 

@@ -13,6 +13,7 @@ from rich.console import Console
 from rich.markdown import Markdown
 from rich.table import Table
 
+from hunterscope import coverage as cov
 from hunterscope.casestore import STATUSES, CaseStore, default_db_path, iso
 from hunterscope.config.loader import load_redactor_config, load_rules_config
 from hunterscope.handover import Handover, build_handover
@@ -289,5 +290,41 @@ def shift_summary(
         err.print(f"[green]Handover written to {output}[/green]")
     elif sys.stdout.isatty():
         Console().print(Markdown(text))
+    else:
+        typer.echo(text)
+
+
+@app.command("coverage")
+def coverage_cmd(
+    otrf: Annotated[Path | None, typer.Option(exists=True, file_okay=False, help="Checkout of OTRF/Security-Datasets")] = None,
+    evtx: Annotated[Path | None, typer.Option(exists=True, file_okay=False, help="Checkout of EVTX-ATTACK-SAMPLES")] = None,
+    output: Annotated[Path | None, typer.Option("--output", "-o")] = None,
+    config: Annotated[Path | None, typer.Option(help="Rules config overriding defaults")] = None,
+) -> None:
+    """Measure rule coverage against public labelled datasets (see scripts/fetch_datasets.py)."""
+    if otrf is None and evtx is None:
+        raise typer.BadParameter("give at least one of --otrf / --evtx")
+    cfg = load_rules_config(config)
+    otrf_results = None
+    evtx_rows = None
+    if otrf:
+        datasets = cov.load_otrf(otrf)
+        if not datasets:
+            err.print("[red]No labelled Windows datasets found. Run scripts/fetch_datasets.py first.[/red]")
+            raise typer.Exit(2)
+        err.print(f"Running {len(datasets)} OTRF datasets...")
+        otrf_results = cov.run_otrf(datasets, cfg)
+    if evtx:
+        err.print("Running EVTX samples...")
+        try:
+            evtx_rows = cov.run_evtx(evtx, cfg)
+        except RuntimeError as exc:
+            err.print(f"[red]{exc}[/red]")
+            raise typer.Exit(2) from exc
+    text = cov.render(otrf_results, evtx_rows, cfg, cov.git_head(otrf) if otrf else "", cov.git_head(evtx) if evtx else "")
+    if output:
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(text, encoding="utf-8")
+        err.print(f"[green]Coverage report written to {output}[/green]")
     else:
         typer.echo(text)

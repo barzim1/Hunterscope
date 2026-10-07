@@ -10,3 +10,5 @@ dist/
 out/
 *.db
 *.db-journal
+# public datasets are fetched, never committed (licences, size)
+data/external/

@@ -8,3 +8,5 @@ dist/
 # never commit real data or pseudonym mappings
 *.mapping.json
 out/
+*.db
+*.db-journal

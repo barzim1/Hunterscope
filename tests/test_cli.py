@@ -78,3 +78,47 @@ def test_stable_key_env(monkeypatch):
     assert stable(a.stdout) == stable(b.stdout)
     monkeypatch.delenv("HS_KEY")
     assert runner.invoke(app, ["triage", *ARGS, "-u", "j", "--redact", "--key-env", "HS_KEY"]).exit_code != 0
+
+
+def _case_args(tmp_path):
+    return ["--db", str(tmp_path / "c.db"), "--author", "anna"]
+
+
+def test_save_creates_then_updates_case(tmp_path):
+    base = ["triage", *ARGS, "-u", "jkowalski", "--save", *_case_args(tmp_path)]
+    a = runner.invoke(app, base)
+    b = runner.invoke(app, base)
+    assert a.exit_code == 0 and "opened" in a.stderr + a.output
+    assert "updated" in b.stderr + b.output and "0 new finding" in b.stderr + b.output
+
+
+def test_case_workflow_and_shift_summary(tmp_path):
+    db = _case_args(tmp_path)
+    runner.invoke(app, ["triage", *ARGS, "-u", "jkowalski", "--save", *db])
+    runner.invoke(app, ["triage", *ARGS, "-u", "akowalska", "--save", *db])
+    bad = runner.invoke(app, ["case", "status", "2", "closed_fp", *db])
+    assert bad.exit_code == 1  # reason required
+    ok = runner.invoke(app, ["case", "status", "2", "closed_fp", "-n", "flight, not impossible travel", *db])
+    assert ok.exit_code == 0
+    assert runner.invoke(app, ["case", "note", "1", "reset password", *db]).exit_code == 0
+    assert runner.invoke(app, ["case", "status", "99", "closed_fp", "-n", "x", *db]).exit_code == 2
+    shown = runner.invoke(app, ["case", "show", "1", *db[:2]])
+    assert "Impossible travel" in shown.stdout and "reset password" in shown.stdout
+    listed = runner.invoke(app, ["case", "list", *db[:2]])
+    assert "jkowalski" in listed.stdout and "akowalska" not in listed.stdout  # closed hidden by default
+    md = runner.invoke(app, ["shift-summary", "--format", "md", *db])
+    assert md.exit_code == 0
+    assert "flight, not impossible travel" in md.stdout and "reset password" in md.stdout  # last note shown
+    assert "user `jkowalski`" in md.stdout
+    red = runner.invoke(app, ["shift-summary", "--redact", *db])
+    assert "jkowalski" not in red.stdout.lower() and "USER_" in red.stdout
+
+
+def test_shift_summary_terminal_tables_and_validation(tmp_path):
+    db = _case_args(tmp_path)
+    runner.invoke(app, ["triage", *ARGS, "-u", "jkowalski", "--save", *db])
+    t = runner.invoke(app, ["shift-summary", "--format", "terminal", *db])
+    assert t.exit_code == 0 and "Unresolved" in t.stdout and "jkowalski" in t.stdout
+    assert runner.invoke(app, ["shift-summary", "--hours", "0", *db]).exit_code != 0
+    assert runner.invoke(app, ["shift-summary", "--format", "html", *db]).exit_code != 0
+    assert runner.invoke(app, ["shift-summary", "--until", "yesterday", *db]).exit_code != 0

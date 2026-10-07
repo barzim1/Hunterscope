@@ -32,7 +32,7 @@ def _mitre_url(tid: str) -> str:
     return "https://attack.mitre.org/techniques/" + tid.replace(".", "/") + "/"
 
 
-def _env() -> Environment:
+def make_env() -> Environment:
     env = Environment(
         loader=PackageLoader("hunterscope", "templates"),
         undefined=StrictUndefined,
@@ -50,7 +50,7 @@ def _env() -> Environment:
 
 def render_markdown(d: Dossier, cfg: dict[str, Any]) -> str:
     limit = cfg["report"]["timeline_limit"]
-    return _env().get_template("dossier.md.j2").render(
+    return make_env().get_template("dossier.md.j2").render(
         d=d,
         iocs=d.iocs(),
         flagged=d.flagged_ids,

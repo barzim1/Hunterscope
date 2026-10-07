@@ -57,6 +57,35 @@ The meta rule `phish_then_new_signin` correlates the verdict: a suspicious mail 
 sign-in from an IP the user had never used before it. It stays silent without prior history (nothing to call "new").
 URLs are defanged (`hxxp://198[.]51[.]100[.]200/login`) in the IOC list.
 
+## Cases and shift handover
+
+`--save` records the triage in a local SQLite case DB (`$HUNTERSCOPE_DB` or `~/.hunterscope/cases.db`, `--db` to
+override). The same target (`jkowalski`, `jkowalski@contoso.com` and `CONTOSO\jkowalski` are one identity) keeps one
+open case: re-triage updates its score and adds only findings it has not seen (content fingerprints), so running it
+every hour does not duplicate anything.
+
+```bash
+hunterscope triage -i $S -u jkowalski --save
+hunterscope case list                                   # open cases (--all for closed)
+hunterscope case note 1 "Password reset forced, waiting for callback"
+hunterscope case status 1 escalated_l2 -n "Inbox rule + OAuth consent confirmed, needs purge"
+hunterscope case status 2 closed_fp  -n "Business trip WAW->LHR, 3 typos then success"
+hunterscope case show 1                                 # findings + full audit log
+hunterscope shift-summary --hours 12                    # rich tables in a terminal, Markdown when piped / -o
+hunterscope shift-summary --redact -o handover.md       # safe to paste into a ticket
+```
+
+Rules that keep the handover trustworthy:
+- Statuses: `new`, `in_progress`, `escalated_l2`, `escalated_l3`, `closed_fp`, `closed_tp`.
+- **Closures and escalations require `--note`**: the next shift must be able to read *why*.
+- **Closed cases are immutable.** A new triage of the same target opens a fresh case instead of silently reopening.
+- Every note and status change is an append-only log entry with author and UTC time.
+- Handover sections: unresolved (sorted by risk, `STALE` after 24 h without any touch), escalated (all still open,
+  flagged if escalated this shift), and closed FP / TP from this shift with their reasons.
+
+The case DB holds **real, un-redacted data**; it is git-ignored, single-writer and meant for a local disk, not a
+network share. Redaction happens on output (`--redact`), never in storage.
+
 ## Score
 
 Not a bare sum. First hit of a rule counts fully, repeats count 25%, one rule is capped at 2x its weight, and
@@ -84,6 +113,6 @@ employer data.
 
 - [x] `.eml` phishing triage (SPF/DKIM/DMARC, defanged URLs, attachment hashes) feeding the same dossier
 - [ ] URL reputation / sandbox enrichment (optional, off by default; offline mode must keep working)
-- [ ] SQLite case store + `--shift-summary` handover (statuses, notes, open anomalies)
+- [x] SQLite case store + `--shift-summary` handover (statuses, notes, open anomalies; md + terminal)
 - [ ] Sigma rules via pySigma for stateless patterns; ATT&CK coverage table vs public datasets
-- [ ] Standalone HTML report; live OpenSearch client (last, after everything works offline)
+- [ ] Standalone HTML report (dossier and handover); live OpenSearch client (last, after everything works offline)

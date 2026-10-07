@@ -9,6 +9,10 @@ scoring:
 report:
   timeline_limit: 200
 
+handover:
+  stale_hours: 24      # open case untouched this long is flagged STALE
+  top_findings: 3      # findings listed per case
+
 rules:
   failures_then_success:
     enabled: true

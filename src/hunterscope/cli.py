@@ -30,7 +30,7 @@ def _main() -> None:
 @app.command()
 def triage(
     inputs: Annotated[
-        list[Path], typer.Option("--input", "-i", exists=True, dir_okay=False, help="JSON/NDJSON log export (repeatable)")
+        list[Path], typer.Option("--input", "-i", exists=True, help="JSON/NDJSON export, .eml or a directory of them (repeatable)")
     ],
     user: Annotated[str | None, typer.Option("--user", "-u", help="UPN, sAMAccountName or DOMAIN\\user")] = None,
     host: Annotated[str | None, typer.Option("--host", "-H", help="Hostname (FQDN suffix ignored)")] = None,

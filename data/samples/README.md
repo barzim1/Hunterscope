@@ -5,8 +5,8 @@ Users, domains and hosts are fictional (`contoso.com`); IPs come from the RFC 57
 
 | User | Story | Expected |
 |---|---|---|
-| `jkowalski` | spraying -> MFA fatigue -> sign-in from Brazil -> forwarding rule + OAuth consent -> suspicious commands | CRITICAL |
-| `akowalska` | forgotten password (3 failures), flight Warsaw->London, `certutil -hashfile`, newsletter rule | 0 findings (false-positive fixtures) |
+| `jkowalski` | phishing email (`emails/phish_password_expiry.eml`) -> spraying -> MFA fatigue -> sign-in from Brazil -> forwarding rule + OAuth consent -> suspicious commands | CRITICAL |
+| `akowalska` | forgotten password (3 failures), flight Warsaw->London, `certutil -hashfile`, newsletter rule, legitimate newsletter email | 0 findings (false-positive fixtures) |
 | `bkowalczyk` | background noise | n/a |
 
 Real-world datasets worth testing against next: OTRF Security-Datasets, EVTX-ATTACK-SAMPLES, Splunk attack_data.

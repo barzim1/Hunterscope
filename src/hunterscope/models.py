@@ -8,7 +8,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
-Source = Literal["entra", "ual", "windows"]
+Source = Literal["entra", "ual", "windows", "email"]
 Outcome = Literal["success", "failure", "unknown"]
 
 

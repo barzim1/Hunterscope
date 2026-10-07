@@ -90,3 +90,24 @@ rules:
          regex: '(?i)vssadmin.*delete\s+shadows'}
       - {id: mshta_remote, label: mshta remote content, mitre: [T1218.005],
          regex: '(?i)mshta.*https?://'}
+
+  suspicious_email:
+    enabled: true
+    weight: 25
+    severity: medium
+    tactic: initial-access
+    mitre: [T1566.001, T1566.002]
+    internal_domains: [contoso.com]
+    weak_signals_needed: 3     # fire on weak signals only when this many co-occur
+    risky_extensions: [html, htm, hta, iso, img, lnk, js, jse, vbs, vbe, wsf, docm, xlsm, pptm, one, exe, scr, jar]
+    shorteners: [bit.ly, tinyurl.com, t.co, goo.gl, ow.ly, is.gd, cutt.ly, rb.gy]
+    lure_keywords: [urgent, immediately, verify, suspended, expires, password, invoice, payment, action required,
+                    pilne, zweryfikuj, hasło, faktura, płatność]
+
+  phish_then_new_signin:       # meta rule: needs the findings of suspicious_email
+    enabled: true
+    weight: 30
+    severity: high
+    tactic: initial-access
+    mitre: [T1566, T1078]
+    window_hours: 24

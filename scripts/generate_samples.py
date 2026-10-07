@@ -1,8 +1,9 @@
 """Generate the SYNTHETIC sample logs in data/samples/. Deterministic; no real data.
 
 Scenario (all hosts/users/IPs are fictional; IPs are RFC 5737 documentation ranges):
-  jkowalski : normal mornings in Warsaw, then password spraying -> MFA fatigue -> access from
-              Brazil, malicious inbox rule + OAuth consent, suspicious commands on WS-JKOWALSKI.
+  jkowalski : normal mornings in Warsaw, a phishing email (emails/), then password spraying ->
+              MFA fatigue -> access from Brazil, malicious inbox rule + OAuth consent,
+              suspicious commands on WS-JKOWALSKI.
   akowalska : benign look-alikes (forgotten password, flight Warsaw->London, admin tooling,
               newsletter inbox rule). Must NOT alert; used as false-positive fixtures.
   bkowalczyk: background noise.
@@ -13,6 +14,8 @@ from __future__ import annotations
 import base64
 import json
 from datetime import datetime, timezone
+from email.message import EmailMessage
+from email.utils import format_datetime
 from pathlib import Path
 
 OUT = Path(__file__).resolve().parent.parent / "data" / "samples"
@@ -108,8 +111,49 @@ def build():
     return entra_logs, ual_logs, win_logs
 
 
+def build_emails() -> dict[str, EmailMessage]:
+    phish = EmailMessage()
+    phish["From"] = '"Contoso IT Support <helpdesk@contoso.com>" <helpdesk@c0ntoso-support.test>'
+    phish["To"] = "jkowalski@contoso.com"
+    phish["Reply-To"] = "collector@mail-drop.test"
+    phish["Return-Path"] = "<bounce@mailer.example.invalid>"
+    phish["Subject"] = "[Action required] Your password expires today - verify now"
+    phish["Date"] = format_datetime(t(11, 8, 50, 12))
+    phish["Message-ID"] = "<20260311085012.1@c0ntoso-support.test>"
+    phish["Authentication-Results"] = (
+        "mx.contoso.com; spf=fail smtp.mailfrom=c0ntoso-support.test; dkim=none; "
+        "dmarc=fail header.from=c0ntoso-support.test")
+    phish["Received"] = ("from mail.c0ntoso-support.test ([198.51.100.200]) by mx.contoso.com; "
+                         + format_datetime(t(11, 8, 50, 15)))
+    phish.set_content("Your password expires today. Sign in: http://198.51.100.200/login")
+    phish.add_alternative(
+        '<p>Your password expires today.</p><a href="http://198.51.100.200/login">https://contoso.com/sso</a>',
+        subtype="html")
+    phish.add_attachment(b"<html><body>synthetic placeholder</body></html>", maintype="text",
+                         subtype="html", filename="invoice_0311.html")
+
+    news = EmailMessage()
+    news["From"] = '"Weekly Digest" <newsletter@news.example.net>'
+    news["To"] = "akowalska@contoso.com"
+    news["Reply-To"] = "editor@news.example.net"
+    news["Return-Path"] = "<bounce@bounces.news.example.net>"
+    news["Subject"] = "Your weekly digest"
+    news["Date"] = format_datetime(t(11, 6, 30))
+    news["Message-ID"] = "<20260311063000.1@news.example.net>"
+    news["Authentication-Results"] = "mx.contoso.com; spf=pass; dkim=pass; dmarc=pass"
+    news["Received"] = ("from mta.news.example.net ([198.51.100.30]) by mx.contoso.com; "
+                        + format_datetime(t(11, 6, 30, 3)))
+    news.set_content("Read online: https://news.example.net/digest/42")
+    news.add_alternative(
+        '<a href="https://news.example.net/digest/42">https://news.example.net/digest/42</a>', subtype="html")
+    return {"phish_password_expiry": phish, "benign_newsletter": news}
+
+
 def main() -> None:
     OUT.mkdir(parents=True, exist_ok=True)
+    (OUT / "emails").mkdir(exist_ok=True)
+    for name, msg in build_emails().items():
+        (OUT / "emails" / f"{name}.eml").write_bytes(bytes(msg))
     for name, rows in zip(("entra_signins", "ual_audit", "windows_sysmon"), build(), strict=True):
         rows.sort(key=lambda r: r.get("createdDateTime") or r.get("CreationTime") or r["TimeCreated"])
         (OUT / f"{name}.ndjson").write_text("\n".join(json.dumps(r) for r in rows) + "\n", encoding="utf-8")

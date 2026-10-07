@@ -276,3 +276,188 @@ def lotl_commandline(events: list[Event], cfg: dict[str, Any], rid: str) -> list
                     )
                 )
     return out
+
+
+# --------------------------------------------------------------------------- phishing
+
+_LEET = str.maketrans("0134578", "oleastb")
+_DOUBLE_EXT = re.compile(r"\.(pdf|docx?|xlsx?|pptx?|jpe?g|png|txt)\.(exe|scr|js|vbs|lnk|html?|bat|cmd)$", re.I)
+_DOMAIN_IN_TEXT = re.compile(
+    r"[\w.+-]+@([\w-]+(?:\.[\w-]+)+)|\b([\w-]+(?:\.[\w-]+)*\.(?:com|net|org|pl|eu|io))\b", re.I
+)
+_URL_LIKE_TEXT = re.compile(r"^(?:https?://)?([\w-]+(?:\.[\w-]+)+)(?:[/?#]\S*)?$", re.I)
+
+
+def defang(value: str) -> str:
+    """hxxp://evil[.]test: safe to paste into tickets and chat."""
+    return re.sub(r"^http", "hxxp", value, flags=re.I).replace(".", "[.]")
+
+
+def _host(url: str) -> str:
+    from urllib.parse import urlsplit
+
+    return (urlsplit(url).hostname or "").lower().removeprefix("www.")
+
+
+def _is_ip(host: str) -> bool:
+    import ipaddress
+
+    try:
+        ipaddress.ip_address(host)
+    except ValueError:
+        return False
+    return True
+
+
+def _in_domain(domain: str, domains: set[str]) -> bool:
+    return any(domain == d or domain.endswith("." + d) for d in domains)
+
+
+def email_signals(e: Event, cfg: dict[str, Any]) -> tuple[list[str], list[str], list[tuple[str, str]]]:
+    """Return (strong signals, weak signals, IOCs) for one email event."""
+    d = e.detail
+    internal = {x.lower() for x in cfg["internal_domains"]}
+    strong: list[str] = []
+    weak: list[str] = []
+    iocs: list[tuple[str, str]] = []
+
+    from_addr: str = d.get("from_addr", "")
+    from_dom = from_addr.rpartition("@")[2]
+    external_sender = bool(from_dom) and not _in_domain(from_dom, internal)
+
+    for key in ("spf", "dkim", "dmarc"):
+        if d.get(key) in {"fail", "softfail", "permerror"}:
+            strong.append(f"{key.upper()} {d[key]}")
+
+    if from_dom.startswith("xn--") or ".xn--" in from_dom:
+        strong.append(f"punycode sender {from_addr}")
+    if external_sender:
+        label = from_dom.translate(_LEET)
+        for dom in internal:
+            brand = dom.split(".")[0]
+            if brand in label or _edit_distance(label, dom) <= 2:
+                strong.append(f"sender {from_addr} imitates {dom}")
+                break
+    name_dom = _DOMAIN_IN_TEXT.search(d.get("from_name", ""))
+    if name_dom:
+        shown = (name_dom.group(1) or name_dom.group(2)).lower()
+        if shown != from_dom:
+            strong.append(f"display name shows {shown} but sender is {from_addr}")
+
+    for att in d.get("attachments", []):
+        name = str(att["filename"])
+        ext = name.rpartition(".")[2].lower()
+        if ext in cfg["risky_extensions"] or _DOUBLE_EXT.search(name):
+            strong.append(f"risky attachment {name}")
+            iocs.append(("sha256", str(att["sha256"])))
+
+    for link in d.get("urls", []):
+        host = _host(link["href"])
+        if _is_ip(host):
+            strong.append(f"link to raw IP {host}")
+        elif host in cfg["shorteners"]:
+            weak.append(f"URL shortener {host}")
+        m = _URL_LIKE_TEXT.match(link.get("text", ""))
+        if m and not _in_domain(host, {m.group(1).lower().removeprefix("www.")}):
+            strong.append(f"link text shows {m.group(1)} but points to {host}")
+        iocs.append(("url", defang(link["href"])))
+
+    reply_dom = d.get("reply_to", "").rpartition("@")[2]
+    if reply_dom and reply_dom != from_dom:
+        weak.append(f"Reply-To {d['reply_to']} differs from sender")
+    path_dom = d.get("return_path", "").rpartition("@")[2]
+    if path_dom and from_dom and not (path_dom == from_dom or path_dom.endswith("." + from_dom)):
+        weak.append(f"Return-Path {d['return_path']} differs from sender")
+    subject = d.get("subject", "").lower()
+    lures = [k for k in cfg["lure_keywords"] if k in subject]
+    if lures:
+        weak.append(f"lure keywords in subject ({', '.join(lures)})")
+
+    if external_sender and from_addr:
+        iocs.append(("sender", from_addr))
+    return list(dict.fromkeys(strong)), weak, iocs
+
+
+def _edit_distance(a: str, b: str) -> int:
+    prev = list(range(len(b) + 1))
+    for i, ca in enumerate(a, 1):
+        cur = [i]
+        for j, cb in enumerate(b, 1):
+            cur.append(min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (ca != cb)))
+        prev = cur
+    return prev[-1]
+
+
+@rule("suspicious_email")
+def suspicious_email(events: list[Event], cfg: dict[str, Any], rid: str) -> list[Finding]:
+    out: list[Finding] = []
+    for e in events:
+        if e.source != "email":
+            continue
+        strong, weak, iocs = email_signals(e, cfg)
+        if not strong and len(weak) < cfg["weak_signals_needed"]:
+            continue
+        if e.ip:
+            iocs.append(("ip", e.ip))
+        subject = e.detail.get("subject", "")
+        out.append(
+            _finding(
+                rid, cfg,
+                f"Suspicious email: {subject[:80]}",
+                "; ".join([*strong, *weak]) + ".",
+                [e],
+                iocs=iocs,
+                severity="high" if len(strong) >= 2 else cfg["severity"],
+            )
+        )
+    return out
+
+
+# ------------------------------------------------------------------- meta rules
+
+MetaRuleFn = Callable[[list[Event], dict[str, Any], str, list[Finding]], list[Finding]]
+META_RULES: dict[str, MetaRuleFn] = {}
+
+
+def meta_rule(name: str) -> Callable[[MetaRuleFn], MetaRuleFn]:
+    def register(fn: MetaRuleFn) -> MetaRuleFn:
+        META_RULES[name] = fn
+        return fn
+
+    return register
+
+
+@meta_rule("phish_then_new_signin")
+def phish_then_new_signin(
+    events: list[Event], cfg: dict[str, Any], rid: str, findings: list[Finding]
+) -> list[Finding]:
+    """Suspicious email, then a successful sign-in from an IP the user never used before it."""
+    window = timedelta(hours=cfg["window_hours"])
+    out: list[Finding] = []
+    for f in findings:
+        if f.rule_id != "suspicious_email":
+            continue
+        mail = f.evidence[0]
+        key = user_key(mail.user)
+        signins = [
+            e for e in events
+            if e.source == "entra" and e.outcome == "success" and user_key(e.user) == key and e.ip
+        ]
+        baseline = {e.ip for e in signins if e.ts < mail.ts}
+        if not baseline:
+            continue  # no history: cannot call an IP "new"
+        hit = next((e for e in signins if mail.ts < e.ts <= mail.ts + window and e.ip not in baseline), None)
+        if hit is None:
+            continue
+        gap = int((hit.ts - mail.ts).total_seconds() // 60)
+        out.append(
+            _finding(
+                rid, cfg,
+                "Possible account takeover after suspicious email",
+                f"Sign-in from previously unseen IP {hit.ip} ({hit.city or '?'}, {hit.country or '?'}) "
+                f"{gap} min after the suspicious email '{mail.detail.get('subject', '')[:60]}'.",
+                [mail, hit],
+                iocs=[("ip", hit.ip)] if hit.ip else [],
+            )
+        )
+    return out

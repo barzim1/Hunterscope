@@ -11,6 +11,7 @@ from typing import Any
 
 from pydantic import ValidationError
 
+from hunterscope.ingest.eml import parse_eml
 from hunterscope.ingest.parsers import PARSERS, detect_source
 from hunterscope.models import Event
 
@@ -45,10 +46,33 @@ def _iter_records(path: Path) -> Iterator[dict[str, Any] | None]:
         yield rec if isinstance(rec, dict) else None
 
 
+_SUFFIXES = {".json", ".ndjson", ".jsonl", ".eml"}
+
+
+def expand_paths(paths: Iterable[Path]) -> list[Path]:
+    """Directories are expanded (recursively) to the supported log/mail files they contain."""
+    out: list[Path] = []
+    for path in map(Path, paths):
+        if path.is_dir():
+            out.extend(sorted(p for p in path.rglob("*") if p.suffix.lower() in _SUFFIXES))
+        else:
+            out.append(path)
+    return out
+
+
 def load_events(paths: Iterable[Path]) -> LoadResult:
     result = LoadResult()
-    for path in paths:
-        for rec in _iter_records(Path(path)):
+    for path in expand_paths(paths):
+        if path.suffix.lower() == ".eml":
+            try:
+                emails = parse_eml(path)
+            except (OSError, ValueError, ValidationError):
+                result.skipped += 1
+                continue
+            result.events.extend(emails)
+            result.sources["email"] += len(emails)
+            continue
+        for rec in _iter_records(path):
             source = detect_source(rec) if rec else None
             if source is None:
                 result.skipped += 1

@@ -14,6 +14,10 @@ def _summary(e: Event) -> str:
         where = ", ".join(x for x in (e.city, e.country) if x)
         reason = e.detail.get("reason") or ""
         return " · ".join(x for x in (e.app, where, f"err {e.error_code}", reason) if x)
+    if e.source == "email":
+        d = e.detail
+        auth = "/".join(f"{k}={d.get(k) or '-'}" for k in ("spf", "dkim", "dmarc"))
+        return f"{d.get('subject', '')} · from {d.get('from_addr', '?')} · {auth}"
     if e.source == "ual":
         params: dict[str, str] = e.detail.get("params", {})
         return "; ".join(f"{k}={v}" for k, v in list(params.items())[:4])

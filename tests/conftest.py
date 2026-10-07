@@ -15,4 +15,4 @@ def cfg():
 
 @pytest.fixture(scope="session")
 def loaded():
-    return load_events(sorted(SAMPLES.glob("*.ndjson")))
+    return load_events([SAMPLES])

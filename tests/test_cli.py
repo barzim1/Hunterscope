@@ -6,7 +6,7 @@ from typer.testing import CliRunner
 from hunterscope.cli import app
 
 SAMPLES = Path(__file__).resolve().parent.parent / "data" / "samples"
-ARGS = [x for f in sorted(SAMPLES.glob("*.ndjson")) for x in ("-i", str(f))]
+ARGS = ["-i", str(SAMPLES)]
 runner = CliRunner()
 
 
@@ -14,7 +14,8 @@ def test_attacker_dossier_is_critical_and_complete():
     r = runner.invoke(app, ["triage", *ARGS, "-u", "jkowalski"])
     assert r.exit_code == 0
     for needle in ("CRITICAL", "Impossible travel", "MFA fatigue", "Suspicious mailbox rule",
-                   "OAuth consent", "T1114/003", "203.0.113.50"):
+                   "OAuth consent", "T1114/003", "203.0.113.50", "Suspicious email",
+                   "Possible account takeover", "hxxp://198[.]51[.]100[.]200/login"):
         assert needle in r.stdout
 
 

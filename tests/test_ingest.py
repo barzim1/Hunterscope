@@ -6,7 +6,7 @@ from hunterscope.models import host_key, user_key
 
 def test_samples_load_without_skips(loaded):
     assert loaded.skipped == 0
-    assert set(loaded.sources) == {"entra", "ual", "windows"}
+    assert set(loaded.sources) == {"entra", "ual", "windows", "email"}
     assert [e.ts for e in loaded.events] == sorted(e.ts for e in loaded.events)
 
 

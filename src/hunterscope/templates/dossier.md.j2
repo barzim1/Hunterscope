@@ -1,0 +1,73 @@
+# Incident Dossier: {{ d.kind }} `{{ d.target }}`
+
+| | |
+|---|---|
+| Window (UTC) | {{ d.since|ts }} → {{ d.until|ts }} |
+| Events analysed | {{ d.events|length }} ({% for s, n in d.sources.items() %}{{ s }}: {{ n }}{{ ", " if not loop.last else "" }}{% endfor %}){% if d.skipped %}, {{ d.skipped }} unparseable record(s) skipped{% endif %} |
+| Generated | {{ d.generated|ts }} UTC |
+| **Risk score** | **{{ d.score.total }}/100 ({{ d.score.level|upper }})** |
+
+## Why this score
+
+{% if d.score.contributions %}
+| Rule | Tactic | Hits | Points |
+|---|---|---:|---:|
+{% for c in d.score.contributions %}
+| {{ c.rule_id }} | {{ c.tactic }} | {{ c.hits }} | {{ c.points }} |
+{% endfor %}
+{% if d.score.bonus %}
+| _multi-stage bonus_ | {{ d.score.bonus_reason|cell }} | | {{ d.score.bonus }} |
+{% endif %}
+{% else %}
+No detections fired; nothing contributes to the score.
+{% endif %}
+
+## Findings
+
+{% for f in d.findings %}
+### {{ loop.index }}. [{{ f.severity|upper }}] {{ f.title }}
+
+- **First seen:** {{ f.ts|ts }} UTC
+- **Tactic:** {{ f.tactic }}
+- **MITRE ATT&CK:** {% for t in f.mitre %}[{{ t }}]({{ t|mitre_url }}){{ ", " if not loop.last else "" }}{% endfor %}
+
+- **Detail:** {{ f.description }}
+
+| Time (UTC) | Source | Action | Outcome | IP | Detail |
+|---|---|---|---|---|---|
+{% for e in f.evidence[:10] %}
+| {{ e.ts|ts }} | {{ e.source }} | {{ e.action|cell }} | {{ e.outcome }} | {{ e.ip|cell }} | {{ e|summary|cell }} |
+{% endfor %}
+{% if f.evidence|length > 10 %}
+
+_…and {{ f.evidence|length - 10 }} more event(s) in the timeline._
+{% endif %}
+
+{% else %}
+_No detections fired in this window._
+
+{% endfor %}
+## Indicators of compromise
+
+{% if iocs %}
+{% for kind, values in iocs.items() %}
+- **{{ kind }}:** {% for v in values %}`{{ v|cell }}`{{ ", " if not loop.last else "" }}{% endfor %}
+
+{% endfor %}
+{% else %}
+None extracted.
+{% endif %}
+
+## Timeline
+
+Rows marked ⚑ are evidence for at least one finding.
+
+| Time (UTC) | | Source | Action | Outcome | IP | Detail |
+|---|---|---|---|---|---|---|
+{% for e in timeline %}
+| {{ e.ts|ts }} | {{ "⚑" if e|id in flagged else "" }} | {{ e.source }} | {{ e.action|cell }} | {{ e.outcome }} | {{ e.ip|cell }} | {{ e|summary|cell }} |
+{% endfor %}
+{% if truncated %}
+
+_Timeline truncated: {{ truncated }} further event(s) not shown._
+{% endif %}

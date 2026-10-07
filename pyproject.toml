@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hunterscope"
+version = "0.1.0"
+description = "Identity-centric SOC investigation & dossier engine (Entra ID / M365 / Windows)"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "pydantic>=2.5",
+  "typer>=0.12",
+  "rich>=13",
+  "jinja2>=3.1",
+  "pyyaml>=6",
+  "tzdata",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff>=0.5"]
+
+[project.scripts]
+hunterscope = "hunterscope.cli:app"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+hunterscope = ["config/*.yaml", "templates/*.j2"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 120
+src = ["src", "tests", "scripts"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.ruff.lint.per-file-ignores]
+"src/hunterscope/cli.py" = ["E501"]  # Typer Annotated signatures

@@ -300,6 +300,7 @@ def coverage_cmd(
     evtx: Annotated[Path | None, typer.Option(exists=True, file_okay=False, help="Checkout of EVTX-ATTACK-SAMPLES")] = None,
     output: Annotated[Path | None, typer.Option("--output", "-o")] = None,
     config: Annotated[Path | None, typer.Option(help="Rules config overriding defaults")] = None,
+    ablate: Annotated[str, typer.Option(help="Comma-separated rule ids: also run without them and report the delta")] = "",
 ) -> None:
     """Measure rule coverage against public labelled datasets (see scripts/fetch_datasets.py)."""
     if otrf is None and evtx is None:
@@ -307,6 +308,8 @@ def coverage_cmd(
     cfg = load_rules_config(config)
     otrf_results = None
     evtx_rows = None
+    baseline = None
+    ablated: tuple[str, ...] = ()
     if otrf:
         datasets = cov.load_otrf(otrf)
         if not datasets:
@@ -314,6 +317,11 @@ def coverage_cmd(
             raise typer.Exit(2)
         err.print(f"Running {len(datasets)} OTRF datasets...")
         otrf_results = cov.run_otrf(datasets, cfg)
+        ablated = tuple(r.strip() for r in ablate.split(",") if r.strip())
+        unknown = [r for r in ablated if r not in cfg["rules"]]
+        if unknown:
+            raise typer.BadParameter(f"unknown rule(s): {', '.join(unknown)}")
+        baseline = cov.run_otrf(datasets, cfg, also_disable=ablated) if ablated else None
     if evtx:
         err.print("Running EVTX samples...")
         try:
@@ -321,7 +329,8 @@ def coverage_cmd(
         except RuntimeError as exc:
             err.print(f"[red]{exc}[/red]")
             raise typer.Exit(2) from exc
-    text = cov.render(otrf_results, evtx_rows, cfg, cov.git_head(otrf) if otrf else "", cov.git_head(evtx) if evtx else "")
+    text = cov.render(otrf_results, evtx_rows, cfg, cov.git_head(otrf) if otrf else "",
+                      cov.git_head(evtx) if evtx else "", baseline, ablated)
     if output:
         output.parent.mkdir(parents=True, exist_ok=True)
         output.write_text(text, encoding="utf-8")

@@ -119,3 +119,41 @@ def test_flatten_evtx_record():
 def test_render_without_datasets_still_explains_scope():
     text = cov.render(None, None, CFG)
     assert "How to read this" in text and "not an EDR" in text
+
+
+def test_split_is_deterministic_balanced_and_salted():
+    ids = [f"SDWIN-{i:06d}" for i in range(2000)]
+    first = [cov.split_of(i) for i in ids]
+    assert first == [cov.split_of(i) for i in ids]
+    assert 900 < first.count("dev") < 1100
+    assert first != [cov.split_of(i, salt="other") for i in ids]
+    # frozen expectations: changing SPLIT_SALT or the scheme would silently reshuffle the holdout
+    assert cov.SPLIT_SALT == "hunterscope-split-v1"
+    assert [cov.split_of(i) for i in ("SDWIN-190518202151", "SDWIN-191027055035", "SDWIN-201018225619")] == [
+        "holdout", "dev", "dev"]
+
+
+def test_wilson_interval():
+    assert cov.wilson(0, 0) == (0.0, 0.0)
+    lo, hi = cov.wilson(1, 7)
+    assert 0.02 < lo < 0.04 and 0.45 < hi < 0.55          # 1/7: wide, as the report says
+    assert cov.wilson(10, 10)[1] == 1.0 and cov.wilson(0, 10)[0] == 0.0
+    lo, hi = cov.wilson(50, 100)
+    assert 0.39 < lo < 0.41 and 0.59 < hi < 0.61
+
+
+def test_ablation_report_shows_delta_cost_and_newly_hit(otrf):
+    access = {"EventID": 10, "TimeCreated": "2026-03-01T10:00:00Z", "Hostname": "h", "SourceImage": "C:\\x\\d.exe",
+              "TargetImage": "C:\\Windows\\System32\\lsass.exe", "GrantedAccess": "0x1410"}
+    add(otrf, "SDWIN-1", (("T1003", "001"),), [access])
+    add(otrf, "SDWIN-2", (("T1547", "001"),), [access])           # off-label: lsass finding, other label
+    datasets = cov.load_otrf(otrf)
+    now = cov.run_otrf(datasets, CFG)
+    before = cov.run_otrf(datasets, CFG, also_disable=("lsass_access",))
+    declared = cov.declared_techniques(CFG)
+    assert [r.dataset.id for r in cov.gained(now, before, declared)] == ["SDWIN-1"]
+    cost = cov.rule_cost(now, "lsass_access")
+    assert sum(c[0] for c in cost.values()) == 2 and sum(c[1] for c in cost.values()) == 1
+    text = cov.render(now, None, CFG, baseline=before, ablated=("lsass_access",))
+    assert "Without `lsass_access`" in text and "became a family hit only because of" in text
+    assert "SDWIN-1" in text and "95% CI" in text

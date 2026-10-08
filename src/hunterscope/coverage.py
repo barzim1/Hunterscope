@@ -7,8 +7,10 @@ technique. EVTX-ATTACK-SAMPLES only labels the *tactic* (folder name), so it yie
 
 from __future__ import annotations
 
+import hashlib
 import io
 import json
+import math
 import subprocess
 import zipfile
 from collections import Counter, defaultdict
@@ -28,6 +30,29 @@ MAX_MEMBER_BYTES = 300 * 1024 * 1024  # refuse zip members that decompress to mo
 
 def parent(technique: str) -> str:
     return technique.split(".")[0]
+
+
+# --------------------------------------------------------------------- dev / holdout split
+
+SPLIT_SALT = "hunterscope-split-v1"  # fixed forever: changing it would silently re-shuffle the holdout
+
+
+def split_of(dataset_id: str, salt: str = SPLIT_SALT) -> str:
+    """Deterministic 50/50 split by hash of the dataset id. Rules are designed on `dev` only;
+    `holdout` is read through the report and never inspected raw while writing rules."""
+    digest = hashlib.sha256(f"{salt}:{dataset_id}".encode()).digest()
+    return "dev" if digest[0] % 2 == 0 else "holdout"
+
+
+def wilson(k: int, n: int, z: float = 1.96) -> tuple[float, float]:
+    """95% Wilson score interval for a proportion; honest about how little n=8 tells you."""
+    if n == 0:
+        return 0.0, 0.0
+    p = k / n
+    denom = 1 + z * z / n
+    centre = (p + z * z / (2 * n)) / denom
+    half = z * math.sqrt(p * (1 - p) / n + z * z / (4 * n * n)) / denom
+    return max(0.0, centre - half), min(1.0, centre + half)
 
 
 # --------------------------------------------------------------------------- labels (OTRF)
@@ -133,22 +158,26 @@ class DatasetResult:
     def got(self) -> set[str]:
         return {m for f in self.findings for m in f.mitre}
 
+    @property
+    def split(self) -> str:
+        return split_of(self.dataset.id)
+
 
 LAB_UNEVALUABLE = ("off_hours_login",)  # depends on a workday clock that lab data does not have
 
 
-def lab_config(cfg: dict[str, Any]) -> dict[str, Any]:
+def lab_config(cfg: dict[str, Any], also_disable: tuple[str, ...] = ()) -> dict[str, Any]:
     from copy import deepcopy
 
     out = deepcopy(cfg)
-    for rule_id in LAB_UNEVALUABLE:
+    for rule_id in (*LAB_UNEVALUABLE, *also_disable):
         if rule_id in out["rules"]:
             out["rules"][rule_id]["enabled"] = False
     return out
 
 
-def run_otrf(datasets: list[Dataset], cfg: dict[str, Any]) -> list[DatasetResult]:
-    cfg = lab_config(cfg)
+def run_otrf(datasets: list[Dataset], cfg: dict[str, Any], also_disable: tuple[str, ...] = ()) -> list[DatasetResult]:
+    cfg = lab_config(cfg, also_disable)
     results: list[DatasetResult] = []
     for ds in datasets:
         events: list[Event] = []
@@ -161,6 +190,28 @@ def run_otrf(datasets: list[Dataset], cfg: dict[str, Any]) -> list[DatasetResult
         usable = sum(e.action in {"process_create", "logon"} for e in events)
         results.append(DatasetResult(ds, len(events), skipped, run_detections(events, cfg), usable))
     return results
+
+
+@dataclass
+class SplitRow:
+    split: str
+    datasets: int
+    in_scope: int
+    hits: int
+
+    @property
+    def interval(self) -> tuple[float, float]:
+        return wilson(self.hits, self.in_scope)
+
+
+def split_summary(results: list[DatasetResult], declared: set[str]) -> list[SplitRow]:
+    rows = []
+    for name in ("dev", "holdout", "all"):
+        subset = [r for r in results if name == "all" or r.split == name]
+        scope = [r for r in subset if any(covered_by_rule(t, declared) for t in r.dataset.techniques)]
+        hits = [r for r in scope if any(family_hit(t, r.got) for t in r.dataset.techniques)]
+        rows.append(SplitRow(name, len(subset), len(scope), len(hits)))
+    return rows
 
 
 @dataclass
@@ -196,6 +247,33 @@ def off_label(results: list[DatasetResult]) -> dict[str, tuple[int, int]]:
             if not ({parent(m) for m in f.mitre} & labelled):
                 stats[f.rule_id][1] += 1
     return {k: (v[0], v[1]) for k, v in sorted(stats.items())}
+
+
+def gained(results: list[DatasetResult], baseline: list[DatasetResult], declared: set[str]) -> list[DatasetResult]:
+    """In-scope datasets that are a family hit now but were not without the ablated rule(s)."""
+    before = {r.dataset.id: r for r in baseline}
+    out = []
+    for r in results:
+        scope = [t for t in r.dataset.techniques if covered_by_rule(t, declared)]
+        if scope and any(family_hit(t, r.got) for t in scope) and not any(
+            family_hit(t, before[r.dataset.id].got) for t in scope
+        ):
+            out.append(r)
+    return out
+
+
+def rule_cost(results: list[DatasetResult], rule_id: str) -> dict[str, tuple[int, int]]:
+    """split -> (findings of this rule, of which off-label)."""
+    stats = {"dev": [0, 0], "holdout": [0, 0]}
+    for r in results:
+        labelled = {parent(t) for t in r.dataset.techniques}
+        for f in r.findings:
+            if f.rule_id != rule_id:
+                continue
+            stats[r.split][0] += 1
+            if not ({parent(m) for m in f.mitre} & labelled):
+                stats[r.split][1] += 1
+    return {k: (v[0], v[1]) for k, v in stats.items()}
 
 
 # --------------------------------------------------------------------- EVTX-ATTACK-SAMPLES
@@ -281,8 +359,14 @@ def _pct(n: int, d: int) -> str:
     return f"{100 * n / d:.0f}%" if d else "n/a"
 
 
+def _fmt_split(r: SplitRow) -> str:
+    lo, hi = r.interval
+    return f"{r.hits} / {r.in_scope} ({_pct(r.hits, r.in_scope)}, 95% CI {lo:.0%}-{hi:.0%})"
+
+
 def render(otrf: list[DatasetResult] | None, evtx: list[TacticRow] | None, cfg: dict[str, Any],
-           otrf_rev: str = "", evtx_rev: str = "") -> str:
+           otrf_rev: str = "", evtx_rev: str = "", baseline: list[DatasetResult] | None = None,
+           ablated: tuple[str, ...] = ()) -> str:
     declared = declared_techniques(cfg)
     out = ["# Detection coverage: measured, not claimed", "",
            "Generated by `hunterscope coverage`. Re-run it after changing any rule; do not edit by hand.", ""]
@@ -314,6 +398,31 @@ def render(otrf: list[DatasetResult] | None, evtx: list[TacticRow] | None, cfg: 
                        f"{'yes' if r.has_rule else '-'} | {r.datasets} | {r.family if r.has_rule else '-'} | "
                        f"{r.exact if r.has_rule else '-'} | {_pct(r.family, r.datasets) if r.has_rule else '-'} | "
                        f"{r.example} |")
+        out += ["", "### Dev / holdout split", "",
+                f"Datasets are split 50/50 by a fixed hash (`SPLIT_SALT = {SPLIT_SALT!r}`). Rules are designed by "
+                "looking at **dev** telemetry only; **holdout** is read only through this report. The split was "
+                "fixed after the first all-data report had been read, so holdout is held out from rule design, "
+                "not blind. With this few in-scope datasets the intervals are wide: read counts, not percentages.",
+                ""]
+        if baseline is not None and ablated:
+            label = ", ".join(f"`{a}`" for a in ablated)
+            base_rows = {r.split: r for r in split_summary(baseline, declared)}
+            out += [f"| Split | Datasets | Without {label} | With {label} |", "|---|---:|---|---|"]
+            for row in split_summary(otrf, declared):
+                out.append(f"| {row.split} | {row.datasets} | {_fmt_split(base_rows[row.split])} | {_fmt_split(row)} |")
+            newly = gained(otrf, baseline, declared)
+            out += ["", f"Datasets that became a family hit only because of {label}: "
+                    + (", ".join(f"{r.dataset.id} ({r.split}: {r.dataset.title})" for r in newly) or "none") + ".", ""]
+            for rid in ablated:
+                cost = rule_cost(otrf, rid)
+                out += [f"`{rid}` findings (off-label = no matching technique label on that dataset): "
+                        f"dev {cost['dev'][0]} ({cost['dev'][1]} off-label), "
+                        f"holdout {cost['holdout'][0]} ({cost['holdout'][1]} off-label).", ""]
+        else:
+            out += ["| Split | Datasets | In-scope hits |", "|---|---:|---|"]
+            for row in split_summary(otrf, declared):
+                out.append(f"| {row.split} | {row.datasets} | {_fmt_split(row)} |")
+            out.append("")
         misses = [r for r in in_scope if r not in hit]
         out += ["", "### In-scope datasets with no finding in the right family", "",
                 "Why each was missed, as far as can be told from the telemetry: `no process/logon events` means "

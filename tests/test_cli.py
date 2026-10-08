@@ -122,3 +122,10 @@ def test_shift_summary_terminal_tables_and_validation(tmp_path):
     assert runner.invoke(app, ["shift-summary", "--hours", "0", *db]).exit_code != 0
     assert runner.invoke(app, ["shift-summary", "--format", "html", *db]).exit_code != 0
     assert runner.invoke(app, ["shift-summary", "--until", "yesterday", *db]).exit_code != 0
+
+
+def test_coverage_cli_validates_arguments(tmp_path):
+    assert runner.invoke(app, ["coverage"]).exit_code != 0                          # needs a dataset
+    (tmp_path / "datasets/atomic/_metadata").mkdir(parents=True)
+    r = runner.invoke(app, ["coverage", "--otrf", str(tmp_path)])
+    assert r.exit_code == 2                                                         # nothing fetched yet

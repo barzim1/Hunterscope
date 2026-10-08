@@ -98,8 +98,8 @@ def _win_time(rec: dict[str, Any]) -> Any:
 def _win_user(rec: dict[str, Any], event_id: int) -> str | None:
     """Sysmon has `User`. Security 4624/4625 log the *target* account (Subject is the machine/SYSTEM);
     every other Security event we handle acts as the subject."""
-    if rec.get("User"):
-        return str(rec["User"])
+    if rec.get("User") or rec.get("SourceUser"):
+        return str(rec.get("User") or rec["SourceUser"])
     prefix = "Target" if event_id in {4624, 4625} else "Subject"
     name = rec.get(f"{prefix}UserName")
     if not name or name == "-":
@@ -127,6 +127,14 @@ def parse_windows(rec: dict[str, Any]) -> Event:
             command_line=rec.get("CommandLine"),
             app=rec.get("Image") or rec.get("NewProcessName"),
         )
+    if event_id == 10:  # Sysmon ProcessAccess
+        base["detail"] = {
+            **base["detail"],
+            "target_image": rec.get("TargetImage") or "",
+            "granted_access": rec.get("GrantedAccess") or "",
+            "call_trace": rec.get("CallTrace") or "",
+        }
+        return Event(**base, action="process_access", outcome="success", app=rec.get("SourceImage"))
     if event_id == 4624:
         return Event(**base, action="logon", outcome="success")
     if event_id == 4625:

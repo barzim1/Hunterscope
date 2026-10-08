@@ -278,6 +278,42 @@ def lotl_commandline(events: list[Event], cfg: dict[str, Any], rid: str) -> list
     return out
 
 
+@rule("lsass_access")
+def lsass_access(events: list[Event], cfg: dict[str, Any], rid: str) -> list[Finding]:
+    """Credential dumping signal from Sysmon 10. One finding per (host, source process), not per event:
+    legitimate and malicious tools alike open lsass many times in a row."""
+    target = re.compile(cfg["target"])
+    allowed = [re.compile(p) for p in cfg["allowed_sources"]]
+    bit = int(cfg["vm_read_bit"])
+    groups: dict[tuple[str, str], list[Event]] = defaultdict(list)
+    for e in events:
+        if e.action != "process_access" or not target.search(e.detail.get("target_image", "")):
+            continue
+        try:
+            mask = int(str(e.detail.get("granted_access", "")), 16)
+        except ValueError:
+            continue
+        src = e.app or ""
+        if not mask & bit or any(a.search(src) for a in allowed):
+            continue
+        groups[((e.host or "").lower(), src.lower())].append(e)
+    out: list[Finding] = []
+    for (host, _), evs in groups.items():
+        src = evs[0].app or ""  # original casing for display and IOCs; grouping key is lower-cased
+        masks = sorted({str(e.detail["granted_access"]).lower() for e in evs})
+        out.append(
+            _finding(
+                rid, cfg,
+                f"Process read access to lsass.exe from {src.rsplit(chr(92), 1)[-1] or '?'}",
+                f"{src or '?'} opened lsass.exe {len(evs)} time(s) on {host or '?'} with memory-read "
+                f"access (GrantedAccess {', '.join(masks)}).",
+                evs,
+                iocs=[("process", src)] if src else [],
+            )
+        )
+    return out
+
+
 # --------------------------------------------------------------------------- phishing
 
 _LEET = str.maketrans("0134578", "oleastb")

@@ -115,3 +115,18 @@ rules:
     tactic: initial-access
     mitre: [T1566, T1078]
     window_hours: 24
+
+  lsass_access:                # Sysmon EventID 10: a process opens lsass.exe with memory-read rights
+    enabled: true
+    weight: 30
+    severity: high
+    tactic: credential-access
+    mitre: [T1003.001]
+    target: '(?i)\\lsass\.exe$'
+    vm_read_bit: 0x10          # PROCESS_VM_READ: GrantedAccess without it cannot read credentials
+    # Starting point, NOT a universal allowlist: tune per environment. Regexes on the full source path.
+    allowed_sources:
+      - '(?i)^[a-z]:\\windows\\system32\\(csrss|wininit|winlogon|services|lsm)\.exe$'
+      - '(?i)\\windows defender\\(platform\\[^\\]+\\)?msmpeng\.exe$'
+      - '(?i)\\vmware tools\\vmtoolsd\.exe$'
+      - '(?i)\\collectguestlogs\.exe$'      # Azure guest agent; seen opening lsass with 0x1410 in OTRF dev data

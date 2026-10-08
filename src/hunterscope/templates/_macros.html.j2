@@ -1,0 +1,3 @@
+{% macro sev(level) -%}
+<span class="chip sev-{{ level }}"><span class="g" aria-hidden="true">{{ {"critical": "◆", "high": "▲", "medium": "■", "low": "●", "info": "○"}[level] }}</span>{{ level|upper }}</span>
+{%- endmacro %}

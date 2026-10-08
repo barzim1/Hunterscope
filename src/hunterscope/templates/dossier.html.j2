@@ -1,0 +1,103 @@
+{% extends "base.html.j2" %}
+{% from "_macros.html.j2" import sev %}
+{% block title %}Incident dossier: {{ d.kind }} {{ d.target }}{% endblock %}
+{% block body %}
+<h1>Incident dossier</h1>
+<p class="sub">{{ d.kind|capitalize }} <code>{{ d.target }}</code></p>
+<div class="meta">
+  <span>Window (UTC) <b>{{ d.since|ts }}</b> → <b>{{ d.until|ts }}</b></span>
+  <span>Sources <b>{% for s, n in d.sources.items() %}{{ s }} {{ n }}{{ ", " if not loop.last else "" }}{% endfor %}</b></span>
+  {% if d.skipped %}<span>{{ d.skipped }} unparseable record(s) skipped</span>{% endif %}
+</div>
+
+<section class="hero" aria-label="Risk summary">
+  <div class="card sev-{{ d.score.level }}">
+    <div class="small muted">Risk score</div>
+    <div class="hero-fig">{{ d.score.total }}<small> / 100</small></div>
+    <div class="meter" role="meter" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ d.score.total }}" aria-label="Risk score {{ d.score.total }} of 100"><i style="width: {{ d.score.total|int }}%"></i></div>
+    {{ sev(d.score.level) }}
+  </div>
+  <div class="kpis">
+    <div class="kpi"><div class="v">{{ d.findings|length }}</div><div class="l">Findings</div></div>
+    <div class="kpi"><div class="v">{{ tactics|selectattr("on")|list|length }}</div><div class="l">ATT&amp;CK tactics</div></div>
+    <div class="kpi"><div class="v">{{ d.events|length }}</div><div class="l">Events analysed</div></div>
+    <div class="kpi"><div class="v">{{ iocs.values()|map("length")|sum }}</div><div class="l">Indicators</div></div>
+  </div>
+</section>
+
+<h2>Tactics observed</h2>
+<div class="chain" role="list">
+  {% for t in tactics %}<span class="step{{ " on" if t.on else "" }}" role="listitem">{{ t.name }}{% if t.on %} <span class="small muted">({{ t.count }})</span>{% endif %}</span>{% endfor %}
+</div>
+
+<h2>Why this score</h2>
+{% if d.score.contributions %}
+<div class="tw"><table>
+  <thead><tr><th>Rule</th><th>Tactic</th><th class="num">Hits</th><th>Points</th></tr></thead>
+  <tbody>
+  {% for c in d.score.contributions %}
+  <tr>
+    <td><code>{{ c.rule_id }}</code></td><td>{{ c.tactic }}</td><td class="num">{{ c.hits }}</td>
+    <td><div class="barcell" title="{{ "%g"|format(c.points) }} points"><div class="bar"><i style="width: {{ (100 * c.points / max_points)|round(1) }}%"></i></div><span class="num">{{ "%g"|format(c.points) }}</span></div></td>
+  </tr>
+  {% endfor %}
+  {% if d.score.bonus %}
+  <tr><td><em>multi-stage bonus</em><div class="small muted">{{ d.score.bonus_reason }}</div></td><td></td><td></td>
+    <td><div class="barcell" title="{{ "%g"|format(d.score.bonus) }} points"><div class="bar"><i style="width: {{ (100 * d.score.bonus / max_points)|round(1) }}%"></i></div><span class="num">{{ "%g"|format(d.score.bonus) }}</span></div></td></tr>
+  {% endif %}
+  </tbody>
+</table></div>
+<p class="small muted">Repeat hits of one rule count 25%, one rule is capped at twice its weight, the total at 100.</p>
+{% else %}
+<p class="empty">No detections fired; nothing contributes to the score.</p>
+{% endif %}
+
+<h2>Findings</h2>
+{% for f in d.findings %}
+<article class="finding">
+  <header>{{ sev(f.severity) }}<h3>{{ f.title }}</h3><span class="when">{{ f.ts|ts }} UTC</span></header>
+  <div class="tags">
+    <span class="chip plain">{{ f.tactic }}</span>
+    {% for t in f.mitre %}<a class="chip plain" href="{{ t|mitre_url }}" rel="noopener noreferrer">{{ t }}</a>{% endfor %}
+  </div>
+  <p>{{ f.description }}</p>
+  <div class="tw"><table>
+    <thead><tr><th>Time (UTC)</th><th>Source</th><th>Action</th><th>Outcome</th><th>IP</th><th>Detail</th></tr></thead>
+    <tbody>
+    {% for e in f.evidence[:10] %}
+    <tr><td class="mono nw">{{ e.ts|ts }}</td><td>{{ e.source }}</td><td>{{ e.action }}</td><td>{{ e.outcome }}</td><td class="mono nw">{{ e.ip or "" }}</td><td class="mono">{{ e|summary }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  {% if f.evidence|length > 10 %}<p class="small muted">…and {{ f.evidence|length - 10 }} more event(s) in the timeline.</p>{% endif %}
+</article>
+{% else %}
+<p class="empty">No detections fired in this window.</p>
+{% endfor %}
+
+<h2>Indicators of compromise</h2>
+{% if iocs %}
+<dl class="ioc">
+  {% for kind, values in iocs.items() %}
+  <dt>{{ kind }}</dt><dd>{% for v in values %}<code>{{ v }}</code>{% endfor %}</dd>
+  {% endfor %}
+</dl>
+{% else %}
+<p class="empty">None extracted.</p>
+{% endif %}
+
+<h2>Timeline</h2>
+<p class="small muted">Rows marked <span class="chip flag">⚑ flagged</span> are evidence for at least one finding.</p>
+<div class="tw"><table>
+  <thead><tr><th>Time (UTC)</th><th></th><th>Source</th><th>Action</th><th>Outcome</th><th>IP</th><th>Detail</th></tr></thead>
+  <tbody>
+  {% for e in timeline %}
+  <tr{% if e|id in flagged %} class="flagged"{% endif %}>
+    <td class="mono nw">{{ e.ts|ts }}</td><td>{% if e|id in flagged %}<span class="chip flag">⚑ flagged</span>{% endif %}</td>
+    <td>{{ e.source }}</td><td>{{ e.action }}</td><td>{{ e.outcome }}</td><td class="mono nw">{{ e.ip or "" }}</td><td class="mono">{{ e|summary }}</td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+{% if truncated %}<p class="small muted">Timeline truncated: {{ truncated }} further event(s) not shown.</p>{% endif %}
+{% endblock %}

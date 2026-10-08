@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:">
+<meta name="generator" content="HunterScope 0.1.0">
+<title>Shift handover 2026-03-11 20:00:00</title>
+<style>
+:root {
+  color-scheme: light;
+  --surface: #fcfcfb; --surface-2: #f5f4f1; --line: #e4e3de;
+  --ink: #0b0b0b; --ink-2: #52514e; --ink-3: #6b6a65;
+  --series: #2a78d6; --series-track: #cde2fb;
+  --critical: #d03b3b; --high: #ec835a; --medium: #fab219; --low: #7a7974; --info: #a8a7a2;
+  --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) {
+    color-scheme: dark;
+    --surface: #1a1a19; --surface-2: #222221; --line: #34342f;
+    --ink: #ffffff; --ink-2: #c3c2b7; --ink-3: #9d9c93;
+    --series: #3987e5; --series-track: #0d366b;
+    --low: #9d9c93; --info: #6b6a66;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --surface: #1a1a19; --surface-2: #222221; --line: #34342f;
+  --ink: #ffffff; --ink-2: #c3c2b7; --ink-3: #9d9c93;
+  --series: #3987e5; --series-track: #0d366b;
+  --low: #9d9c93; --info: #6b6a66;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--surface); color: var(--ink); font: 15px/1.5 var(--sans); }
+main { max-width: 1120px; margin: 0 auto; padding: 32px 16px 64px; }
+h1 { font-size: 24px; margin: 0 0 4px; font-weight: 650; letter-spacing: -0.01em; }
+h2 { font-size: 13px; margin: 40px 0 12px; font-weight: 650; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ink-2); }
+h3 { font-size: 16px; margin: 0; font-weight: 600; }
+a { color: var(--series); text-underline-offset: 2px; }
+code, .mono { font-family: var(--mono); font-size: 13px; overflow-wrap: anywhere; }
+.muted { color: var(--ink-2); }
+.small { font-size: 13px; }
+.sub { color: var(--ink-2); margin: 0; }
+.meta { display: flex; flex-wrap: wrap; gap: 4px 24px; margin-top: 8px; color: var(--ink-2); font-size: 13px; }
+.meta b { color: var(--ink); font-weight: 600; }
+
+/* severity: status color + glyph + label, never color alone */
+.sev-critical { --sev: var(--critical); } .sev-high { --sev: var(--high); } .sev-medium { --sev: var(--medium); }
+.sev-low { --sev: var(--low); } .sev-info { --sev: var(--info); }
+.chip { display: inline-flex; align-items: center; gap: 6px; padding: 1px 8px; border: 1px solid var(--line); border-radius: 999px;
+  font-size: 12px; font-weight: 600; letter-spacing: 0.03em; white-space: nowrap; background: var(--surface); }
+.chip .g { color: var(--sev); font-size: 11px; }
+.chip.plain { font-weight: 500; letter-spacing: 0; color: var(--ink-2); }
+.chip.flag { border-color: var(--ink-2); color: var(--ink); }
+
+/* hero figure + meter */
+.hero { display: grid; grid-template-columns: minmax(260px, 340px) 1fr; gap: 24px; margin-top: 24px; align-items: stretch; }
+.card { background: var(--surface-2); border: 1px solid var(--line); border-radius: 12px; padding: 20px; }
+.hero-fig { font-size: 64px; line-height: 1; font-weight: 650; letter-spacing: -0.03em; }
+.hero-fig small { font-size: 20px; font-weight: 500; color: var(--ink-2); letter-spacing: 0; }
+.meter { height: 10px; border-radius: 999px; margin: 14px 0 10px;
+  background: color-mix(in srgb, var(--sev) 24%, var(--surface-2)); overflow: hidden; }
+.meter > i { display: block; height: 100%; background: var(--sev); border-radius: 999px; }
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 12px; align-content: start; }
+.kpi { background: var(--surface-2); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; }
+.kpi .v { font-size: 30px; font-weight: 650; line-height: 1.1; letter-spacing: -0.02em; }
+.kpi .l { color: var(--ink-2); font-size: 13px; margin-top: 2px; }
+
+/* tactic strip */
+.chain { display: flex; flex-wrap: wrap; gap: 6px; }
+.chain .step { padding: 4px 10px; border-radius: 8px; border: 1px solid var(--line); font-size: 13px; color: var(--ink-3); }
+.chain .step.on { border-color: var(--ink); color: var(--ink); font-weight: 600; background: var(--surface-2); }
+.chain .step.on::before { content: "\2713\00a0"; }
+
+/* tables */
+.tw { overflow-x: auto; border: 1px solid var(--line); border-radius: 12px; }
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th { text-align: left; font-weight: 600; color: var(--ink-2); padding: 8px 12px; border-bottom: 1px solid var(--line); white-space: nowrap; background: var(--surface-2); }
+td { padding: 8px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+tr:last-child td { border-bottom: 0; }
+td.nw { white-space: nowrap; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+.barcell { display: flex; align-items: center; gap: 10px; min-width: 160px; }
+.bar { flex: 1; height: 8px; background: var(--series-track); border-radius: 4px; }
+.bar > i { display: block; height: 100%; background: var(--series); border-radius: 0 4px 4px 0; }
+tr.flagged td:first-child { box-shadow: inset 3px 0 0 var(--ink); }
+
+/* findings */
+.finding { background: var(--surface-2); border: 1px solid var(--line); border-radius: 12px; padding: 16px 20px; margin-bottom: 14px; break-inside: avoid; }
+.finding header { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; margin-bottom: 6px; }
+.finding .when { color: var(--ink-2); font-size: 13px; }
+.finding p { margin: 6px 0 12px; overflow-wrap: anywhere; }
+.finding .tags { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+.finding .tw { background: var(--surface); }
+.empty { color: var(--ink-2); padding: 12px 0; }
+.ioc { margin: 0 0 8px; }
+.ioc dt { font-weight: 600; font-size: 13px; color: var(--ink-2); margin-top: 10px; }
+.ioc dd { margin: 4px 0 0; display: flex; flex-wrap: wrap; gap: 6px; }
+.ioc code { background: var(--surface-2); border: 1px solid var(--line); border-radius: 6px; padding: 2px 8px; }
+footer { margin-top: 48px; padding-top: 16px; border-top: 1px solid var(--line); color: var(--ink-3); font-size: 12px; }
+
+@media (max-width: 720px) {
+  .hero { grid-template-columns: 1fr; }
+  .hero-fig { font-size: 52px; }
+  main { padding-top: 20px; }
+}
+@media print {
+  :root { color-scheme: light; }
+  body { font-size: 11px; }
+  main { padding: 0; max-width: none; }
+  .meter, .bar, .bar > i, .meter > i, .chip, .card, .kpi, .finding, th { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+  .tw { overflow: visible; }
+  h2 { break-after: avoid; }
+}
+</style>
+</head>
+<body>
+<main>
+<h1>Shift handover</h1>
+<p class="sub">Prepared by <b>anna</b></p>
+<div class="meta"><span>Window (UTC) <b>2026-03-11 08:00:00</b> → <b>2026-03-11 20:00:00</b></span></div>
+
+<section class="kpis" style="margin-top: 24px" aria-label="Counts">
+  <div class="kpi"><div class="v">3</div><div class="l">Opened this shift</div></div>
+  <div class="kpi"><div class="v">2</div><div class="l">Unresolved</div></div>
+  <div class="kpi"><div class="v">1</div><div class="l">Escalated (open)</div></div>
+  <div class="kpi"><div class="v">1</div><div class="l">Closed: false positive</div></div>
+  <div class="kpi"><div class="v">0</div><div class="l">Closed: true positive</div></div>
+</section>
+
+<h2>Unresolved: needs follow-up</h2>
+<div class="tw"><table>
+  <thead><tr><th>Case</th><th>Target</th><th>Risk</th><th>Status</th><th class="num">Age</th><th>Findings</th><th>Last note</th></tr></thead>
+  <tbody>
+  <tr>
+    <td>#2 <span class="chip plain">new</span></td>
+    <td class="nw">user <code>jkowalski</code></td>
+    <td class="nw"><span class="chip sev-critical"><span class="g" aria-hidden="true">◆</span>100 · CRITICAL</span></td>
+    <td class="nw">In progress</td>
+    <td class="num nw">9 h</td>
+    <td>Impossible travel between successful sign-ins; Suspicious email: [Action required] Your password expires today - verify now; Possible account takeover after suspicious email <span class="muted">(+7 more)</span></td>
+    <td>Password reset forced; waiting for the user to call back.</td>
+  </tr>
+  <tr>
+    <td>#1 <span class="chip flag">STALE</span></td>
+    <td class="nw">user <code>bkowalczyk</code></td>
+    <td class="nw"><span class="chip sev-info"><span class="g" aria-hidden="true">○</span>0 · INFO</span></td>
+    <td class="nw">New</td>
+    <td class="num nw">53 h</td>
+    <td></td>
+    <td></td>
+  </tr>
+  </tbody>
+</table></div>
+
+<h2>Escalated</h2>
+<div class="tw"><table>
+  <thead><tr><th>Case</th><th>Target</th><th>Risk</th><th>Escalated to</th><th>Reason</th></tr></thead>
+  <tbody>
+  <tr><td>#4 <span class="chip plain">this shift</span></td>
+    <td class="nw">host <code>ws-jkowalski</code></td><td class="nw"><span class="chip sev-medium"><span class="g" aria-hidden="true">■</span>30 · MEDIUM</span></td>
+    <td class="nw">Escalated to L2</td><td>Encoded PowerShell + certutil download; needs EDR isolation and memory capture.</td></tr>
+  </tbody>
+</table></div>
+
+<h2>Closed: false positive (this shift)</h2>
+<div class="tw"><table>
+  <thead><tr><th>Case</th><th>Target</th><th>Risk at closure</th><th>Reason</th></tr></thead>
+  <tbody>
+  <tr><td>#3</td><td class="nw">user <code>akowalska</code></td><td class="nw"><span class="chip sev-info"><span class="g" aria-hidden="true">○</span>0 · INFO</span></td><td>Business trip WAW-&gt;LHR, 3 typos then success; no spray pattern.</td></tr>
+  </tbody>
+</table></div>
+
+<h2>Closed: true positive (this shift)</h2>
+<p class="empty">None.</p><footer>
+  Generated by HunterScope 0.1.0 · 2026-10-08 01:23:05 UTC · static report: no scripts, no external requests.
+</footer>
+</main>
+</body>
+</html>

@@ -1,0 +1,132 @@
+# Detection thresholds, weights and MITRE mapping. Override any key with --config.
+scoring:
+  repeat_factor: 0.25        # 2nd+ hit of the same rule adds weight * repeat_factor
+  rule_cap_multiplier: 2.0   # one noisy rule can never contribute more than weight * 2
+  multi_stage_bonus: 10      # per additional distinct ATT&CK tactic seen
+  multi_stage_bonus_cap: 20
+  levels: {critical: 80, high: 60, medium: 30, low: 10}
+
+report:
+  timeline_limit: 200
+
+handover:
+  stale_hours: 24      # open case untouched this long is flagged STALE
+  top_findings: 3      # findings listed per case
+
+rules:
+  failures_then_success:
+    enabled: true
+    weight: 30
+    severity: high
+    tactic: credential-access
+    mitre: [T1110, T1078]
+    threshold: 5
+    window_minutes: 30
+
+  mfa_fatigue:
+    enabled: true
+    weight: 30
+    severity: high
+    tactic: credential-access
+    mitre: [T1621]
+    threshold: 5
+    window_minutes: 20
+    error_codes: [500121]
+
+  impossible_travel:
+    enabled: true
+    weight: 25
+    severity: high
+    tactic: initial-access
+    mitre: [T1078]
+    min_distance_km: 500
+    max_speed_kmh: 900
+
+  off_hours_login:
+    enabled: true
+    weight: 8
+    severity: low
+    tactic: initial-access
+    mitre: [T1078]
+    timezone: Europe/Warsaw
+    work_start: 6      # local hour, inclusive
+    work_end: 20       # local hour, exclusive
+    weekends_off_hours: true
+
+  suspicious_inbox_rule:
+    enabled: true
+    weight: 30
+    severity: high
+    tactic: collection
+    mitre: [T1114.003, T1564.008]
+    internal_domains: [contoso.com]
+    suspicious_folders: [RSS Feeds, RSS Subscriptions, Conversation History, Junk Email, Deleted Items]
+    keywords: [invoice, payment, password, security, bank, faktura, płatność, hasło]
+
+  oauth_consent:
+    enabled: true
+    weight: 20
+    severity: medium
+    tactic: persistence
+    mitre: [T1528]
+    risky_scopes: [Mail.Read, Mail.ReadWrite, Mail.Send, Files.ReadWrite.All, offline_access, full_access_as_app]
+
+  lotl_commandline:
+    enabled: true
+    weight: 20
+    severity: high
+    tactic: execution
+    mitre: [T1059]
+    patterns:
+      - {id: encoded_powershell, label: Encoded PowerShell, mitre: [T1059.001, T1027],
+         regex: '(?i)powershell.*\s-(e|ec|enc|encodedcommand)\s+[A-Za-z0-9+/=]{20,}'}
+      - {id: frombase64, label: Inline base64 decoding, mitre: [T1027],
+         regex: '(?i)frombase64string'}
+      - {id: certutil_abuse, label: certutil download/decode, mitre: [T1105, T1140],
+         regex: '(?i)certutil.*(-urlcache|-decode|-encode|-verifyctl)'}
+      - {id: bitsadmin_transfer, label: bitsadmin transfer, mitre: [T1197, T1105],
+         regex: '(?i)bitsadmin.*\/transfer'}
+      - {id: lsass_dump, label: LSASS memory dump, mitre: [T1003.001],
+         regex: '(?i)(procdump.*lsass|comsvcs\.dll.*minidump)'}
+      - {id: whoami_priv, label: Privilege discovery (whoami), mitre: [T1033],
+         regex: '(?i)whoami(\.exe)?\s+/(priv|all|groups)'}
+      - {id: shadow_delete, label: Shadow copy deletion, mitre: [T1490],
+         regex: '(?i)vssadmin.*delete\s+shadows'}
+      - {id: mshta_remote, label: mshta remote content, mitre: [T1218.005],
+         regex: '(?i)mshta.*https?://'}
+
+  suspicious_email:
+    enabled: true
+    weight: 25
+    severity: medium
+    tactic: initial-access
+    mitre: [T1566.001, T1566.002]
+    internal_domains: [contoso.com]
+    weak_signals_needed: 3     # fire on weak signals only when this many co-occur
+    risky_extensions: [html, htm, hta, iso, img, lnk, js, jse, vbs, vbe, wsf, docm, xlsm, pptm, one, exe, scr, jar]
+    shorteners: [bit.ly, tinyurl.com, t.co, goo.gl, ow.ly, is.gd, cutt.ly, rb.gy]
+    lure_keywords: [urgent, immediately, verify, suspended, expires, password, invoice, payment, action required,
+                    pilne, zweryfikuj, hasło, faktura, płatność]
+
+  phish_then_new_signin:       # meta rule: needs the findings of suspicious_email
+    enabled: true
+    weight: 30
+    severity: high
+    tactic: initial-access
+    mitre: [T1566, T1078]
+    window_hours: 24
+
+  lsass_access:                # Sysmon EventID 10: a process opens lsass.exe with memory-read rights
+    enabled: true
+    weight: 30
+    severity: high
+    tactic: credential-access
+    mitre: [T1003.001]
+    target: '(?i)\\lsass\.exe$'
+    vm_read_bit: 0x10          # PROCESS_VM_READ: GrantedAccess without it cannot read credentials
+    # Starting point, NOT a universal allowlist: tune per environment. Regexes on the full source path.
+    allowed_sources:
+      - '(?i)^[a-z]:\\windows\\system32\\(csrss|wininit|winlogon|services|lsm)\.exe$'
+      - '(?i)\\windows defender\\(platform\\[^\\]+\\)?msmpeng\.exe$'
+      - '(?i)\\vmware tools\\vmtoolsd\.exe$'
+      - '(?i)\\collectguestlogs\.exe$'      # Azure guest agent; seen opening lsass with 0x1410 in OTRF dev data

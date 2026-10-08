@@ -1,0 +1,59 @@
+# Shift handover
+
+**Window (UTC):** {{ h.since|ts }} → {{ h.until|ts }} · **Prepared by:** {{ h.analyst }}
+
+| Opened | Closed (FP) | Closed (TP) | Escalated (open) | Unresolved |
+|---:|---:|---:|---:|---:|
+| {{ h.opened }} | {{ h.closed_fp|length }} | {{ h.closed_tp|length }} | {{ h.escalated|length }} | {{ h.unresolved|length }} |
+
+## Unresolved: needs follow-up
+
+{% if h.unresolved %}
+| Case | Target | Risk | Status | Age | Findings | Last note |
+|---|---|---|---|---:|---|---|
+{% for v in h.unresolved %}
+| #{{ v.case.id }}{{ " **STALE**" if v.stale else "" }}{{ " (new)" if v.new_this_shift else "" }} | {{ v.case.kind }} `{{ v.case.target }}` | {{ v.case.score }} ({{ v.case.level }}) | {{ v.case.status_label }} | {{ "%.0f"|format(v.age_hours) }} h | {{ v.top_findings|join("; ")|cell }}{{ " (+%d more)"|format(v.more_findings) if v.more_findings else "" }} | {{ (v.last_note.text if v.last_note else "")|cell }} |
+{% endfor %}
+
+{% else %}
+_Nothing unresolved._
+
+{% endif %}
+## Escalated
+
+{% if h.escalated %}
+| Case | Target | Risk | Escalated to | Reason |
+|---|---|---|---|---|
+{% for v in h.escalated %}
+| #{{ v.case.id }}{{ " (this shift)" if v.new_this_shift else "" }} | {{ v.case.kind }} `{{ v.case.target }}` | {{ v.case.score }} ({{ v.case.level }}) | {{ v.case.status_label }} | {{ v.decision_note|cell }} |
+{% endfor %}
+
+{% else %}
+_No open escalations._
+
+{% endif %}
+## Closed: False Positive (this shift)
+
+{% if h.closed_fp %}
+| Case | Target | Risk at closure | Reason |
+|---|---|---|---|
+{% for v in h.closed_fp %}
+| #{{ v.case.id }} | {{ v.case.kind }} `{{ v.case.target }}` | {{ v.case.score }} ({{ v.case.level }}) | {{ v.decision_note|cell }} |
+{% endfor %}
+
+{% else %}
+_None._
+
+{% endif %}
+## Closed: True Positive (this shift)
+
+{% if h.closed_tp %}
+| Case | Target | Risk at closure | Outcome |
+|---|---|---|---|
+{% for v in h.closed_tp %}
+| #{{ v.case.id }} | {{ v.case.kind }} `{{ v.case.target }}` | {{ v.case.score }} ({{ v.case.level }}) | {{ v.decision_note|cell }} |
+{% endfor %}
+
+{% else %}
+_None._
+{% endif %}

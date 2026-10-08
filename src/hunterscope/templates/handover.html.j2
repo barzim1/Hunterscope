@@ -1,0 +1,75 @@
+{% extends "base.html.j2" %}
+{% from "_macros.html.j2" import sev %}
+{% block title %}Shift handover {{ h.until|ts }}{% endblock %}
+{% macro risk(c) %}<span class="chip sev-{{ c.level }}"><span class="g" aria-hidden="true">{{ {"critical": "◆", "high": "▲", "medium": "■", "low": "●", "info": "○"}[c.level] }}</span>{{ c.score }} · {{ c.level|upper }}</span>{% endmacro %}
+{% block body %}
+<h1>Shift handover</h1>
+<p class="sub">Prepared by <b>{{ h.analyst }}</b></p>
+<div class="meta"><span>Window (UTC) <b>{{ h.since|ts }}</b> → <b>{{ h.until|ts }}</b></span></div>
+
+<section class="kpis" style="margin-top: 24px" aria-label="Counts">
+  <div class="kpi"><div class="v">{{ h.opened }}</div><div class="l">Opened this shift</div></div>
+  <div class="kpi"><div class="v">{{ h.unresolved|length }}</div><div class="l">Unresolved</div></div>
+  <div class="kpi"><div class="v">{{ h.escalated|length }}</div><div class="l">Escalated (open)</div></div>
+  <div class="kpi"><div class="v">{{ h.closed_fp|length }}</div><div class="l">Closed: false positive</div></div>
+  <div class="kpi"><div class="v">{{ h.closed_tp|length }}</div><div class="l">Closed: true positive</div></div>
+</section>
+
+<h2>Unresolved: needs follow-up</h2>
+{% if h.unresolved %}
+<div class="tw"><table>
+  <thead><tr><th>Case</th><th>Target</th><th>Risk</th><th>Status</th><th class="num">Age</th><th>Findings</th><th>Last note</th></tr></thead>
+  <tbody>
+  {% for v in h.unresolved %}
+  <tr>
+    <td>#{{ v.case.id }}{% if v.stale %} <span class="chip flag">STALE</span>{% endif %}{% if v.new_this_shift %} <span class="chip plain">new</span>{% endif %}</td>
+    <td class="nw">{{ v.case.kind }} <code>{{ v.case.target }}</code></td>
+    <td class="nw">{{ risk(v.case) }}</td>
+    <td class="nw">{{ v.case.status_label }}</td>
+    <td class="num nw">{{ "%.0f"|format(v.age_hours) }} h</td>
+    <td>{{ v.top_findings|join("; ") }}{% if v.more_findings %} <span class="muted">(+{{ v.more_findings }} more)</span>{% endif %}</td>
+    <td>{{ v.last_note.text if v.last_note else "" }}</td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+{% else %}<p class="empty">Nothing unresolved.</p>{% endif %}
+
+<h2>Escalated</h2>
+{% if h.escalated %}
+<div class="tw"><table>
+  <thead><tr><th>Case</th><th>Target</th><th>Risk</th><th>Escalated to</th><th>Reason</th></tr></thead>
+  <tbody>
+  {% for v in h.escalated %}
+  <tr><td>#{{ v.case.id }}{% if v.new_this_shift %} <span class="chip plain">this shift</span>{% endif %}</td>
+    <td class="nw">{{ v.case.kind }} <code>{{ v.case.target }}</code></td><td class="nw">{{ risk(v.case) }}</td>
+    <td class="nw">{{ v.case.status_label }}</td><td>{{ v.decision_note }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+{% else %}<p class="empty">No open escalations.</p>{% endif %}
+
+<h2>Closed: false positive (this shift)</h2>
+{% if h.closed_fp %}
+<div class="tw"><table>
+  <thead><tr><th>Case</th><th>Target</th><th>Risk at closure</th><th>Reason</th></tr></thead>
+  <tbody>
+  {% for v in h.closed_fp %}
+  <tr><td>#{{ v.case.id }}</td><td class="nw">{{ v.case.kind }} <code>{{ v.case.target }}</code></td><td class="nw">{{ risk(v.case) }}</td><td>{{ v.decision_note }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+{% else %}<p class="empty">None.</p>{% endif %}
+
+<h2>Closed: true positive (this shift)</h2>
+{% if h.closed_tp %}
+<div class="tw"><table>
+  <thead><tr><th>Case</th><th>Target</th><th>Risk at closure</th><th>Outcome</th></tr></thead>
+  <tbody>
+  {% for v in h.closed_tp %}
+  <tr><td>#{{ v.case.id }}</td><td class="nw">{{ v.case.kind }} <code>{{ v.case.target }}</code></td><td class="nw">{{ risk(v.case) }}</td><td>{{ v.decision_note }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+{% else %}<p class="empty">None.</p>{% endif %}
+{% endblock %}

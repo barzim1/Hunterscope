@@ -1,0 +1,9 @@
+# Anonymizer configuration. Override any key with --redactor-config.
+internal_networks: ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"]
+internal_domains: [contoso.com, contoso.local]
+netbios_domains: [CONTOSO]
+keep_public_ips: true         # attacker IPs are IOCs; set false when sharing outside the SOC
+keep_external_emails: false   # external addresses may belong to customers: mask by default
+# Organization-specific identifiers. `regex` is matched case-insensitively.
+extra_patterns:
+  - {name: employee_id, regex: 'EMP\d{6}', label: EMPLOYEE_ID}

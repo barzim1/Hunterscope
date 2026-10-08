@@ -1,0 +1,29 @@
+From: "Weekly Digest" <newsletter@news.example.net>
+To: akowalska@contoso.com
+Reply-To: editor@news.example.net
+Return-Path: <bounce@bounces.news.example.net>
+Subject: Your weekly digest
+Date: Wed, 11 Mar 2026 06:30:00 +0000
+Message-ID: <20260311063000.1@news.example.net>
+Authentication-Results: mx.contoso.com; spf=pass; dkim=pass; dmarc=pass
+Received: from mta.news.example.net ([198.51.100.30]) by mx.contoso.com; Wed,
+ 11 Mar 2026 06:30:03 +0000
+MIME-Version: 1.0
+Content-Type: multipart/alternative;
+ boundary="===============3701481674939172439=="
+
+--===============3701481674939172439==
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+
+Read online: https://news.example.net/digest/42
+
+--===============3701481674939172439==
+Content-Type: text/html; charset="utf-8"
+Content-Transfer-Encoding: quoted-printable
+MIME-Version: 1.0
+
+<a href=3D"https://news.example.net/digest/42">https://news.example.net/diges=
+t/42</a>
+
+--===============3701481674939172439==--

@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 from typing import Any
 
-from jinja2 import Environment, PackageLoader, StrictUndefined
+from jinja2 import Environment, PackageLoader, StrictUndefined, select_autoescape
 
 from hunterscope.models import Event
 from hunterscope.triage import Dossier
@@ -35,6 +36,8 @@ def _mitre_url(tid: str) -> str:
 def make_env() -> Environment:
     env = Environment(
         loader=PackageLoader("hunterscope", "templates"),
+        # HTML templates render untrusted log content (command lines, subjects): escape by default.
+        autoescape=select_autoescape(enabled_extensions=("html.j2",), default=False),
         undefined=StrictUndefined,
         keep_trailing_newline=True,
         trim_blocks=True,
@@ -61,3 +64,39 @@ def render_markdown(d: Dossier, cfg: dict[str, Any]) -> str:
 
 def render_json(d: Dossier) -> str:
     return json.dumps(d.to_dict(), indent=2, ensure_ascii=False)
+
+
+# ATT&CK enterprise order; tactics HunterScope has no rule for still show up if a custom rule uses them.
+TACTIC_ORDER = ["initial-access", "execution", "persistence", "privilege-escalation", "defense-evasion",
+                "credential-access", "discovery", "lateral-movement", "collection", "command-and-control",
+                "exfiltration", "impact"]
+
+
+def tactic_chain(d: Dossier) -> list[dict[str, Any]]:
+    seen: dict[str, int] = {}
+    for f in d.findings:
+        seen[f.tactic] = seen.get(f.tactic, 0) + 1
+    names = TACTIC_ORDER + sorted(t for t in seen if t not in TACTIC_ORDER)
+    return [{"name": n, "on": n in seen, "count": seen.get(n, 0)} for n in names]
+
+
+def _stamp(dt: datetime | None = None) -> str:
+    return (dt or datetime.now(timezone.utc)).strftime("%Y-%m-%d %H:%M:%S")
+
+
+def render_html(d: Dossier, cfg: dict[str, Any]) -> str:
+    from hunterscope import __version__
+
+    limit = cfg["report"]["timeline_limit"]
+    points = [c.points for c in d.score.contributions] + [d.score.bonus]
+    return make_env().get_template("dossier.html.j2").render(
+        d=d,
+        iocs=d.iocs(),
+        flagged=d.flagged_ids,
+        timeline=d.events[:limit],
+        truncated=max(0, len(d.events) - limit),
+        tactics=tactic_chain(d),
+        max_points=max(points) or 1,
+        version=__version__,
+        generated=_stamp(d.generated),
+    )

@@ -28,6 +28,41 @@ pytest -q
 `--anchor latest` (default) ends the window at the target's newest event, which is what you want for exported
 data; use `--anchor now` against live exports.
 
+## Reports
+
+Every dossier and handover can be rendered as Markdown (for tickets), JSON, or a **standalone HTML** file:
+
+```bash
+hunterscope triage -i $S -u jkowalski -f html -o dossier.html
+hunterscope triage -i $S -u jkowalski -f html --redact -o dossier-shareable.html
+hunterscope shift-summary -f html -o handover.html
+```
+
+![Dossier: risk score, tactics observed and score breakdown](docs/img/dossier-light.png)
+
+![Dossier in dark mode: findings with evidence](docs/img/dossier-dark-findings.png)
+
+![Shift handover: unresolved, escalated and closed cases](docs/img/handover-light.png)
+
+![The same dossier with --redact: the user becomes USER_A](docs/img/dossier-redacted.png)
+
+Open the generated examples in a browser: [`dossier-jkowalski.html`](docs/examples/dossier-jkowalski.html),
+[`dossier-jkowalski-redacted.html`](docs/examples/dossier-jkowalski-redacted.html),
+[`handover.html`](docs/examples/handover.html) (synthetic data; download first, GitHub shows source).
+
+Design decisions:
+- **No JavaScript and no external requests**, enforced by a `Content-Security-Policy` of `default-src 'none'`. The
+  file is safe to attach to a ticket or email and works offline. Print it from the browser for a PDF.
+- **Log content is untrusted.** Command lines, subjects and sender names go through Jinja autoescaping; tests feed
+  `<script>` and `<img onerror>` payloads through every field.
+- **Colour never carries meaning alone.** Severity is a status colour plus a distinct glyph and a text label; the
+  risk score is a hero number with a meter and the exact value; the score breakdown is a table whose bars also print
+  their points. Follows the OS light/dark setting and prints cleanly.
+- The only links are to the MITRE ATT&CK technique pages.
+
+Rebuild the examples and screenshots (deterministic, synthetic): `pip install -e ".[shots]"` then
+`python scripts/build_screenshots.py`.
+
 ## Detections (stateful correlation; `src/hunterscope/config/rules.yaml`)
 
 | Rule | Tactic | MITRE |
@@ -161,4 +196,5 @@ employer data.
 - [x] ATT&CK coverage measured against public datasets (`docs/coverage.md`)
 - [ ] Sigma rules via pySigma for stateless patterns, evaluated on a held-out split of the same datasets
 - [x] Sysmon 10 (ProcessAccess to lsass): closed the largest measured gap (T1003.001), measured with a holdout
-- [ ] Standalone HTML report (dossier and handover); live OpenSearch client (last, after everything works offline)
+- [x] Standalone HTML report (dossier and handover)
+- [ ] Live OpenSearch client (last, only after everything works offline)

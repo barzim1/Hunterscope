@@ -120,7 +120,7 @@ def test_shift_summary_terminal_tables_and_validation(tmp_path):
     t = runner.invoke(app, ["shift-summary", "--format", "terminal", *db])
     assert t.exit_code == 0 and "Unresolved" in t.stdout and "jkowalski" in t.stdout
     assert runner.invoke(app, ["shift-summary", "--hours", "0", *db]).exit_code != 0
-    assert runner.invoke(app, ["shift-summary", "--format", "html", *db]).exit_code != 0
+    assert runner.invoke(app, ["shift-summary", "--format", "pdf", *db]).exit_code != 0
     assert runner.invoke(app, ["shift-summary", "--until", "yesterday", *db]).exit_code != 0
 
 

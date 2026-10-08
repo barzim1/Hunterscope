@@ -20,6 +20,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["pytest>=8", "ruff>=0.5"]
 bench = ["evtx>=0.8"]   # coverage against EVTX-ATTACK-SAMPLES
+shots = ["playwright>=1.40"]   # scripts/build_screenshots.py
 
 [project.scripts]
 hunterscope = "hunterscope.cli:app"

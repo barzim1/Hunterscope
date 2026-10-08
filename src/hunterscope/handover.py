@@ -100,3 +100,10 @@ def build_handover(store: CaseStore, until: datetime, hours: float, cfg: dict[st
 
 def render_markdown(ho: Handover) -> str:
     return make_env().get_template("handover.md.j2").render(h=ho)
+
+
+def render_html(ho: Handover) -> str:
+    from hunterscope import __version__
+    from hunterscope.report import _stamp
+
+    return make_env().get_template("handover.html.j2").render(h=ho, version=__version__, generated=_stamp())

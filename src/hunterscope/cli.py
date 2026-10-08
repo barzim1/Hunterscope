@@ -17,11 +17,12 @@ from hunterscope import coverage as cov
 from hunterscope.casestore import STATUSES, CaseStore, default_db_path, iso
 from hunterscope.config.loader import load_redactor_config, load_rules_config
 from hunterscope.handover import Handover, build_handover
+from hunterscope.handover import render_html as render_handover_html
 from hunterscope.handover import render_markdown as render_handover_md
 from hunterscope.ingest import load_events
 from hunterscope.models import host_key, user_key
 from hunterscope.redactor import Redactor
-from hunterscope.report import render_json, render_markdown
+from hunterscope.report import render_html, render_json, render_markdown
 from hunterscope.triage import build_dossier, parse_timerange
 
 app = typer.Typer(add_completion=False, no_args_is_help=True, help="HunterScope: SOC triage dossiers.")
@@ -78,7 +79,7 @@ def triage(
     redact: Annotated[bool, typer.Option("--redact", help="Pseudonymize PII before output")] = False,
     key_env: Annotated[str | None, typer.Option(help="Env var holding an HMAC key for stable pseudonyms across runs")] = None,
     mapping_out: Annotated[Path | None, typer.Option(help="Write label->original mapping (SENSITIVE)")] = None,
-    fmt: Annotated[str, typer.Option("--format", "-f", help="md | json")] = "md",
+    fmt: Annotated[str, typer.Option("--format", "-f", help="md | json | html")] = "md",
     output: Annotated[Path | None, typer.Option("--output", "-o")] = None,
     config: Annotated[Path | None, typer.Option(help="Rules config overriding defaults")] = None,
     redactor_config: Annotated[Path | None, typer.Option(help="Redactor config overriding defaults")] = None,
@@ -89,8 +90,8 @@ def triage(
     """Build an investigation dossier for a user or a host."""
     if (user is None) == (host is None):
         raise typer.BadParameter("provide exactly one of --user / --host")
-    if fmt not in {"md", "json"}:
-        raise typer.BadParameter("--format must be md or json")
+    if fmt not in {"md", "json", "html"}:
+        raise typer.BadParameter("--format must be md, json or html")
     try:
         window = parse_timerange(timerange)
     except ValueError as exc:
@@ -118,7 +119,9 @@ def triage(
         err.print(f"[red]{exc}[/red]")
         raise typer.Exit(2) from exc
 
-    text = render_markdown(dossier, cfg) if fmt == "md" else render_json(dossier)
+    renderers = {"md": lambda: render_markdown(dossier, cfg), "json": lambda: render_json(dossier),
+                 "html": lambda: render_html(dossier, cfg)}
+    text = renderers[fmt]()
 
     if save:
         with _open_store(db) as store:
@@ -141,6 +144,8 @@ def triage(
         err.print(f"[green]Report written to {output}[/green] (score {dossier.score.total}/100, {dossier.score.level})")
     elif fmt == "md" and sys.stdout.isatty():
         Console().print(Markdown(text))
+    elif fmt == "html" and sys.stdout.isatty():
+        raise typer.BadParameter("HTML belongs in a file: use -o report.html")
     else:
         typer.echo(text)
 
@@ -257,7 +262,7 @@ def _handover_tables(ho: Handover) -> None:
 def shift_summary(
     hours: Annotated[float, typer.Option("--hours", help="Shift length")] = 12,
     until: Annotated[str, typer.Option(help="Window end: 'now' or ISO timestamp")] = "now",
-    fmt: Annotated[str, typer.Option("--format", "-f", help="auto | terminal | md")] = "auto",
+    fmt: Annotated[str, typer.Option("--format", "-f", help="auto | terminal | md | html")] = "auto",
     redact: Annotated[bool, typer.Option("--redact", help="Pseudonymize before output (md text)")] = False,
     key_env: Annotated[str | None, typer.Option(help="Env var with an HMAC key for stable pseudonyms")] = None,
     output: Annotated[Path | None, typer.Option("--output", "-o")] = None,
@@ -267,8 +272,8 @@ def shift_summary(
     author: AuthorOpt = None,
 ) -> None:
     """Handover for the next shift: unresolved anomalies, escalations and closures."""
-    if fmt not in {"auto", "terminal", "md"}:
-        raise typer.BadParameter("--format must be auto, terminal or md")
+    if fmt not in {"auto", "terminal", "md", "html"}:
+        raise typer.BadParameter("--format must be auto, terminal, md or html")
     if hours <= 0:
         raise typer.BadParameter("--hours must be positive")
     cfg = load_rules_config(config)
@@ -280,7 +285,7 @@ def shift_summary(
     if fmt == "terminal" and not redact and not output:
         _handover_tables(ho)
         return
-    text = render_handover_md(ho)
+    text = render_handover_html(ho) if fmt == "html" else render_handover_md(ho)
     if redact:
         users = [t for k, t in ho.targets if k == "user"]
         hosts = [t for k, t in ho.targets if k == "host"]
@@ -288,8 +293,10 @@ def shift_summary(
     if output:
         output.write_text(text, encoding="utf-8")
         err.print(f"[green]Handover written to {output}[/green]")
-    elif sys.stdout.isatty():
+    elif sys.stdout.isatty() and fmt == "md":
         Console().print(Markdown(text))
+    elif sys.stdout.isatty():
+        raise typer.BadParameter("HTML belongs in a file: use -o handover.html")
     else:
         typer.echo(text)
 

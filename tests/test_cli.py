@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 
+import pytest
 from typer.testing import CliRunner
 
 from hunterscope.cli import app
@@ -129,3 +130,18 @@ def test_coverage_cli_validates_arguments(tmp_path):
     (tmp_path / "datasets/atomic/_metadata").mkdir(parents=True)
     r = runner.invoke(app, ["coverage", "--otrf", str(tmp_path)])
     assert r.exit_code == 2                                                         # nothing fetched yet
+
+
+@pytest.mark.parametrize("stamp", ["2026-03-11T20:00:00Z", "2026-03-11T20:00:00z", "2026-03-11T20:00:00+00:00",
+                                   "2026-03-11 20:00:00"])
+def test_until_and_anchor_accept_z_suffix_and_naive_utc(tmp_path, stamp):
+    db = _case_args(tmp_path)
+    runner.invoke(app, ["triage", *ARGS, "-u", "jkowalski", "--save", *db])
+    assert runner.invoke(app, ["shift-summary", "--format", "md", "--until", stamp, *db]).exit_code == 0
+    r = runner.invoke(app, ["triage", *ARGS, "-u", "jkowalski", "--anchor", stamp])
+    assert r.exit_code == 0 and "2026-03-11 20:00:00" in r.stdout
+
+
+def test_bad_anchor_is_a_usage_error_not_a_traceback():
+    r = runner.invoke(app, ["triage", *ARGS, "-u", "jkowalski", "--anchor", "yesterday"])
+    assert r.exit_code != 0 and not isinstance(r.exception, ValueError)

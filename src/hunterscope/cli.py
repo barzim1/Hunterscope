@@ -42,14 +42,20 @@ def _open_store(db: Path | None) -> CaseStore:
     return CaseStore(db or default_db_path())
 
 
-def _parse_until(value: str) -> datetime:
-    if value == "now":
-        return datetime.now(timezone.utc)
+def _parse_timestamp(value: str, option: str) -> datetime:
+    """ISO 8601, naive means UTC. Accepts a trailing 'Z', which datetime.fromisoformat only does from 3.11."""
+    text = value.strip()
+    if text.endswith(("Z", "z")):
+        text = text[:-1] + "+00:00"
     try:
-        dt = datetime.fromisoformat(value)
+        dt = datetime.fromisoformat(text)
     except ValueError as exc:
-        raise typer.BadParameter(f"invalid timestamp '{value}'") from exc
+        raise typer.BadParameter(f"invalid timestamp '{value}' for {option}", param_hint=option) from exc
     return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+
+
+def _parse_until(value: str) -> datetime:
+    return datetime.now(timezone.utc) if value == "now" else _parse_timestamp(value, "--until")
 
 
 def _redactor(redactor_config: Path | None, key_env: str | None, users: list[str], hosts: list[str]) -> Redactor:
@@ -103,9 +109,7 @@ def triage(
     if anchor == "now":
         anchor_dt = datetime.now(timezone.utc)
     elif anchor != "latest":
-        anchor_dt = datetime.fromisoformat(anchor)
-        if anchor_dt.tzinfo is None:
-            anchor_dt = anchor_dt.replace(tzinfo=timezone.utc)
+        anchor_dt = _parse_timestamp(anchor, "--anchor")
 
     cfg = load_rules_config(config)
     loaded = load_events(inputs)

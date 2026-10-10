@@ -1,7 +1,10 @@
 """The fictional company the scenarios happen in.
 
 Everything is made up. IPs come from documentation and benchmark ranges (RFC 5737, RFC 2544), so no real
-address is ever labelled malicious; external domains are invented, the benign ones are well-known services.
+address is ever labelled malicious. The same pool serves every role (attacker, SaaS, mobile carrier): an
+address range must never tell the analyst the verdict. Malicious infrastructure comes in three shapes that
+real incidents also have: fresh throw-away domains, typosquats on trusted-looking TLDs (sometimes aged), and
+legitimate shared services abused as hosting (cloud storage, code hosting), whose reputation is clean.
 """
 
 from __future__ import annotations
@@ -61,7 +64,22 @@ BENIGN_SITES = [
 
 _BAD_WORDS = ["secure", "update", "cdn", "portal", "login", "cloud", "sync", "office", "mail", "docs", "support",
               "verify", "service", "static", "assets", "drive", "share"]
-_BAD_TLDS = ["top", "xyz", "click", "icu", "site", "cc", "work", "buzz"]
+_ODD_TLDS = ["top", "xyz", "click", "icu", "site", "cc", "work", "buzz"]
+_TRUSTED_TLDS = ["com", "net", "org", "pl", "eu", "io", "co", "info"]
+BRANDS = ["microsoft", "office365", "sharepoint", "onedrive", "docusign", "dropbox", "adobe", "dhl", "inpost", "allegro", "nordwind",
+          "zoom"]
+
+# Public ranges used for every external address, whatever its role. 198.18.0.0/15 is the benchmark block.
+_PUBLIC_POOLS = [(192, 0, 2), (198, 51, 100), (203, 0, 113), (198, 18, None)]
+
+# (zone, style, proxy category, owner): shared services that attackers abuse as hosting. TI is about the service.
+_SERVICES = [
+    ("blob.core.windows.net", "bucket", "Cloud Storage", "Microsoft (Azure Storage)"),
+    ("s3.amazonaws.com", "bucket", "Cloud Storage", "Amazon (S3)"),
+    ("storage.googleapis.com", "gcs", "Cloud Storage", "Google (Cloud Storage)"),
+    ("raw.githubusercontent.com", "github", "Code Hosting", "GitHub"),
+    ("cdn.discordapp.com", "discord", "File Sharing", "Discord"),
+]
 
 
 @dataclass
@@ -86,6 +104,31 @@ class Person:
     @property
     def profile(self) -> str:
         return f"C:\\Users\\{self.sam}"
+
+
+@dataclass(frozen=True)
+class Remote:
+    """External infrastructure used by an attacker. `kind` decides what threat intel can and cannot say."""
+
+    name: str
+    kind: str  # "fresh" | "typosquat" | "service"
+    category: str  # what the web gateway would label it
+    age_days: int
+    zone: str = ""  # service only: the shared zone TI knows about
+    owner: str = ""
+    prefix: str = "/"
+    brand: str = ""
+
+    def url(self, path: str = "") -> str:
+        return f"https://{self.name}{self.prefix}{path}"
+
+    @property
+    def blurb(self) -> str:
+        if self.kind == "service":
+            return f"legalna usługa ({self.owner}) użyta jako hosting złośliwej treści"
+        if self.kind == "typosquat":
+            return f"domena podszywająca się pod markę „{self.brand}”"
+        return "świeża, nieznana domena"
 
 
 @dataclass
@@ -123,6 +166,7 @@ class World:
         self.token = token
         self._used: set[str] = set()
         self._n = 0
+        self._nat: str | None = None
         self.servers = {s.name: s for s in SERVERS}
 
     # --- people -----------------------------------------------------------------------------------------------
@@ -154,25 +198,84 @@ class World:
         return self.servers[name]
 
     # --- network ----------------------------------------------------------------------------------------------
-    def attacker_ip(self) -> str:
-        return f"203.0.113.{self.rng.randint(10, 250)}"
+    def public_ip(self) -> str:
+        """Any external address. Same pool for attackers, SaaS, carriers and partners on purpose."""
+        r = self.rng
+        while True:
+            a, b, c = r.choice(_PUBLIC_POOLS)
+            ip = (f"{a}.{r.choice([18, 19])}.{r.randint(5, 250)}.{r.randint(2, 250)}" if c is None
+                  else f"{a}.{b}.{c}.{r.randint(10, 250)}")
+            if ip != self._nat:
+                return ip
 
-    def service_ip(self) -> str:
-        """A 'cloud/SaaS' address. Benign by construction (documentation range)."""
-        return f"198.51.100.{self.rng.randint(10, 250)}"
+    # Kept as role names for readability at the call site; they deliberately share one pool.
+    attacker_ip = service_ip = mobile_ip = public_ip
 
     def office_nat_ip(self) -> str:
-        return "198.18.4.10"
-
-    def mobile_ip(self) -> str:
-        return f"198.18.{self.rng.randint(100, 120)}.{self.rng.randint(2, 250)}"
+        """The company's own egress address. Drawn per scenario, so no fixed address says 'benign'."""
+        if self._nat is None:
+            self._nat = self.public_ip()
+        return self._nat
 
     def foreign_geo(self) -> tuple[str, str]:
         return self.rng.choice(GEO_FOREIGN)
 
     def bad_domain(self) -> str:
+        """A dedicated attacker domain (never a shared service): for mail senders, phishing pages, DNS tunnels."""
+        return self.threat_host(2, site_only=True).name
+
+    def threat_host(self, difficulty: int, *, site_only: bool = False, brand: str = "", kind: str = "") -> Remote:
         r = self.rng
-        return f"{r.choice(_BAD_WORDS)}-{r.choice(_BAD_WORDS)}{r.randint(10, 99)}.{r.choice(_BAD_TLDS)}"
+        kind = kind or r.choices(["fresh", "typosquat"] if site_only else ["fresh", "typosquat", "service"],
+                                 [0.4, 0.6] if site_only else [0.3, 0.35, 0.35])[0]
+        if kind == "service":
+            return self._service()
+        if kind == "typosquat":
+            brand = brand or r.choice(BRANDS)
+            tlds = _TRUSTED_TLDS if difficulty >= 2 or r.random() < 0.5 else _ODD_TLDS
+            age = r.randint(1, 6) if difficulty == 1 else r.randint(5, 60) if difficulty == 2 else r.randint(90, 420)
+            category = (r.choice(["Newly Registered Domain", "Uncategorized"]) if difficulty == 1
+                        else "Uncategorized" if difficulty == 2 else r.choice(["Business", "Technology", "Uncategorized"]))
+            return Remote(f"{self._typosquat(brand)}.{r.choice(tlds)}", "typosquat", category, age, brand=brand)
+        tlds = _ODD_TLDS if difficulty == 1 or r.random() < 0.5 else _TRUSTED_TLDS
+        age = r.randint(1, 6) if difficulty == 1 else r.randint(3, 20) if difficulty == 2 else r.randint(10, 60)
+        category = "Newly Registered Domain" if difficulty == 1 else r.choice(["Newly Registered Domain", "Uncategorized"]) if difficulty == 2 else "Uncategorized"
+        return Remote(f"{r.choice(_BAD_WORDS)}-{r.choice(_BAD_WORDS)}{r.randint(10, 99)}.{r.choice(tlds)}", "fresh", category, age)
+
+    def _typosquat(self, brand: str) -> str:
+        r = self.rng
+        word, num = r.choice(_BAD_WORDS), r.randint(10, 99)
+        i = r.randrange(len(brand) - 1)
+        tricks = [
+            lambda: brand.replace("o", "0", 1) if "o" in brand else None,
+            lambda: brand.replace("m", "rn", 1) if "m" in brand else None,
+            lambda: brand.replace("l", "1", 1) if "l" in brand else None,
+            lambda: brand[:i] + brand[i + 1] + brand[i] + brand[i + 2:],
+            lambda: f"{brand}-{word}{num}",
+            lambda: f"{word}-{brand}{num}",
+            lambda: f"{brand}{word}{num}",
+        ]
+        r.shuffle(tricks)
+        for trick in tricks:
+            name = trick()
+            if name and name != brand:
+                # a short token keeps an invented squat from colliding with a registered name
+                return name if any(ch.isdigit() for ch in name) and "-" in name else f"{name}-{r.choice(_BAD_WORDS)}{num}"
+        return f"{brand}-{word}{num}"
+
+    def _service(self) -> Remote:
+        r = self.rng
+        zone, style, category, owner = r.choice(_SERVICES)
+        token = "".join(r.choices("abcdefghijklmnopqrstuvwxyz0123456789", k=r.randint(5, 8)))
+        if style == "bucket":
+            label = f"{r.choice(_BAD_WORDS)}{token}{r.choice(['docs', 'files', 'assets', 'share'])}"
+            return Remote(f"{label}.{zone}", "service", category, 3650, zone, owner, f"/{r.choice(['public', 'share', 'dl', 'files'])}/")
+        if style == "gcs":
+            return Remote(zone, "service", category, 3650, zone, owner, f"/{r.choice(_BAD_WORDS)}-{token}/")
+        if style == "github":
+            return Remote(zone, "service", category, 3650, zone, owner, f"/{token}/{r.choice(_BAD_WORDS)}-tools/main/")
+        digits = lambda n: "".join(r.choices("0123456789", k=n))  # noqa: E731
+        return Remote(zone, "service", category, 3650, zone, owner, f"/attachments/{digits(18)}/{digits(18)}/")
 
     # --- artefacts --------------------------------------------------------------------------------------------
     def digest(self, label: str, algo: str = "sha256") -> str:

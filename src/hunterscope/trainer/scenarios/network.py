@@ -30,6 +30,7 @@ LESSONS_BEACON = Lessons(
         "Domena należy do znanego dostawcy (Microsoft), jest stara i widziana na setkach hostów.",
         "Proces to podpisany komponent systemu lub aplikacji z Program Files / System32.",
         "Regularność jest cechą produktu (telemetria, presence), a nie dowodem złośliwości.",
+        "Młoda domena bez reputacji może należeć do nowego dostawcy zatwierdzonego oprogramowania: sprawdź proces, podpis, sposób wdrożenia i zmianę.",
     ],
     checklist=[
         "Interwał i jitter, rozmiary żądań/odpowiedzi.",
@@ -41,6 +42,7 @@ LESSONS_BEACON = Lessons(
     pitfalls=[
         "Regularność sama nie jest dowodem: większość produktów odpytuje serwery cyklicznie.",
         "Czysta reputacja młodej domeny w TI to brak danych, nie ocena.",
+        "Cel może być legalną usługą współdzieloną (chmura, hosting kodu), więc dobra reputacja celu nie wyklucza C2. Patrz na proces i wzorzec.",
     ],
     attack=["T1071.001 Application Layer Protocol: Web", "T1573 Encrypted Channel", "T1105 Ingress Tool Transfer"],
     tips=[
@@ -56,7 +58,7 @@ LESSONS_BEACON = Lessons(
 )
 
 
-@template("beaconing", ("tp", "fp"), LESSONS_BEACON)
+@template("beaconing", ("tp", "fp", "btp"), LESSONS_BEACON)
 def beaconing(b: Builder, variant: str) -> None:
     w, rng = b.w, b.rng
     b.at_hour(rng.choice([10, 11, 14, 15, 2, 3]))
@@ -64,7 +66,8 @@ def beaconing(b: Builder, variant: str) -> None:
     sess = b.session(p)
     steps = 28
     if variant == "tp":
-        domain, ip = w.bad_domain(), w.attacker_ip()
+        remote = b.threat()
+        domain, ip = remote.name, w.attacker_ip()
         interval = 60 if not b.hard else 300
         if b.hard:
             image = rf"{p.profile}\AppData\Local\Temp\msedge_proxy.exe"
@@ -82,9 +85,9 @@ def beaconing(b: Builder, variant: str) -> None:
         for i in range(steps):
             jitter = rng.uniform(-0.08, 0.08) if not b.hard else rng.uniform(-0.3, 0.3)
             ts = b.t(-(steps - i) * interval / 60 * (1 + jitter) / 1.0, 0)
-            url = f"https://{domain}/api/v2/poll?id={w.digest(p.host)[:10]}"
+            url = remote.url(f"api/v2/poll?id={w.digest(p.host)[:10]}")
             ev = b.add(src.proxy(ts, p.ip, p.sam, "POST", url, 200, 312 + rng.randint(-6, 6), 128 + rng.randint(-4, 4), ua=ua,
-                                 category="Uncategorized" if b.hard else "Newly Registered Domain", host=p.host))
+                                 category=remote.category, host=p.host))
             trigger = ev
             if i == 0:
                 ev.key("Pierwsze żądanie wzorca. Zwróć uwagę na stały rozmiar żądania i odpowiedzi oraz identyfikator hosta w URL.")
@@ -93,14 +96,48 @@ def beaconing(b: Builder, variant: str) -> None:
         for i in (3, 14, 25):
             b.add(src.sysmon_net(b.t(-(steps - i) * interval / 60), p.host, p.netbios, image, mal.pid, ip, 443, domain, src_ip=p.ip)).key(
                 f"Połączenie wychodzące inicjuje {image.rsplit(chr(92), 1)[-1]}, a nie przeglądarka.")
-        b.ti_bad(domain, "domena", age_days=5, tags="C2, beacon")
+        b.ti_threat(remote, ip=ip, tags="C2, beacon")
         noise(b, involved=[p])
         truth = b.truth(
             "tp", "high",
-            f"{p.host} co ~{interval} s wysyła niemal identyczne żądania POST do świeżej domeny {domain}. Połączenia inicjuje nietypowy proces, URL zawiera identyfikator hosta. To beacon C2.",
+            f"{p.host} co ~{interval} s wysyła niemal identyczne żądania POST do {domain} ({remote.blurb}). Połączenia inicjuje nietypowy proces, URL zawiera identyfikator hosta. To beacon C2. "
+            "Reputacja celu nie rozstrzyga: zdradza go proces, regularność i identyczne rozmiary.",
             f"TP. {p.host}: {steps} żądań POST do {domain} (/api/v2/poll?id=…) co ~{interval}s ±jitter, ~312 B out / ~128 B in, UA {'MSIE 7' if not b.hard else 'Chrome'}. "
-            f"Proces inicjujący: {image}. Domena 5 dni, jeden host w organizacji. Eskaluję do L2, izolacja hosta i blokada domeny.",
+            f"Proces inicjujący: {image}. Cel: {remote.blurb}, jeden host w organizacji. Eskaluję do L2, izolacja hosta i blokada celu.",
             required=["isolate_host", "block_ioc"], lookups=[f"ti:{domain}"])
+    elif variant == "btp":
+        domain = "api.pulsewatch-monitor.io"
+        image = r"C:\Program Files\PulseWatch\pwagent.exe"
+        sha = w.digest("pwagent")
+        b.ctx.assets[p.host.lower()]["Uwagi"] = "Zatwierdzone oprogramowanie: PulseWatch (agent monitoringu SaaS, pakiet SCCM P015)"
+        services = Proc(w.pid(), r"C:\Windows\System32\services.exe", "services.exe")
+        ev, proc = b.spawn(services, image, f'"{image}" --service', b.t(-steps * 5 - 30), p.host, SYSTEM, signer="PulseWatch sp. z o.o.", sha256=sha)
+        ev.key("Agent podpisany przez dostawcę, z Program Files, uruchomiony jako usługa (SYSTEM), a nie z profilu użytkownika.")
+        trigger = None
+        for i in range(steps):
+            ts = b.t(-(steps - i) * 5 * (1 + rng.uniform(-0.03, 0.03)))
+            trigger = b.add(src.proxy(ts, p.ip, "SYSTEM", "POST", f"https://{domain}/v1/heartbeat?host={p.host}", 200, 420 + rng.randint(-12, 12),
+                                      96 + rng.randint(-6, 6), ua="PulseWatch-Agent/4.2", category="Uncategorized", host=p.host))
+            if i == 0:
+                trigger.herring("Regularny odstęp, prawie stałe rozmiary, identyfikator hosta w URL, domena młoda i bez kategorii: wszystko wygląda jak beacon. "
+                                "Ale proces, jego podpis i sposób wdrożenia mówią co innego.")
+        for i in (3, 14, 25):
+            b.add(src.sysmon_net(b.t(-(steps - i) * 5), p.host, SYSTEM, image, proc.pid, w.public_ip(), 443, domain, src_ip=p.ip)).key(
+                "Połączenie inicjuje podpisany agent z Program Files, nie plik z profilu użytkownika.")
+        b.ctx.ti[domain] = {
+            "Wskaźnik": domain, "Typ": "domena", "Werdykt TI (symulacja)": "Brak jednoznacznej klasyfikacji (młoda domena komercyjnego SaaS)",
+            "Pierwszy raz widziany": "45 dni temu", "Wiek rejestracji domeny": "45 dni", "Występowanie w organizacji": "61 hostów w ostatnich 30 dniach",
+            "Komentarz": "Domena dostawcy agenta monitoringu; reputacja jeszcze się nie ugruntowała."}
+        b.change("*", b.t(-3 * 1440), b.t(60 * 24 * 30), "Wdrożenie agenta monitoringu PulseWatch na stacjach roboczych (pakiet SCCM P015)", "CHG-1131")
+        b.ti_good(sha, "hash", owner="PulseWatch sp. z o.o.", age_years=1, hosts_seen=61)
+        noise(b, involved=[p])
+        truth = b.truth(
+            "btp", "info",
+            f"Regularne połączenia do {domain} wykonuje agent PulseWatch, wdrożony z SCCM zgodnie z CHG-1131. Domena jest młoda i bez reputacji, a ruch wygląda jak beacon, "
+            "ale proces jest podpisany, działa jako usługa z Program Files i występuje na 61 hostach.",
+            f"BTP. {p.host}: {steps} żądań POST co ~5 min do {domain}; proces pwagent.exe (podpisany PulseWatch, Program Files, usługa). Agent jest na liście zatwierdzonej, "
+            "zmiana CHG-1131 (SCCM P015), 61 hostów w organizacji. Domena młoda, ale to dostawca. Zamykam, wnoszę o wpis domeny na listę dozwolonych.",
+            lookups=[f"ti:{domain}", f"asset:{p.host}", f"change:{p.host}"])
     else:
         telemetry = rng.random() < 0.5
         if telemetry:

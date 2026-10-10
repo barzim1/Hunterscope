@@ -95,6 +95,24 @@ ogranicza wynik całego alertu do 30 pkt.
 Scenariusz jest w pełni określony tokenem `<seed>-<scenariusz>-<poziom>-<tryb>`, więc ten sam przypadek można
 odtworzyć. Werdykt wynika z seeda i nie jest zapisany w tokenie.
 
+## Wskaźniki nie zdradzają werdyktu
+
+Trener celowo odbiera skróty typu „ten zakres IP albo ta końcówka domeny to atak”:
+
+- **Jedna pula adresów dla wszystkich ról.** Adres atakującego, usługi SaaS, operatora komórkowego i firmowego NAT
+  pochodzi z tych samych zakresów publicznych (RFC 5737 i 198.18.0.0/15). Adres wyjściowy biura jest losowany dla
+  każdego scenariusza i ma wpis w TI. Test pilnuje, że w kodzie scenariuszy nie ma wpisanych na stałe zakresów.
+- **Trzy kształty infrastruktury atakującego:** świeża domena (także na zaufanych TLD), typosquat marki (czasem
+  zarejestrowany dawno temu i skategoryzowany jako „Business”) oraz **legalna usługa nadużyta jako hosting**
+  (Azure Blob, S3, Google Storage, GitHub raw, Discord CDN). W trzecim przypadku TI mówi „czysty, znany dostawca”,
+  więc o werdykcie decyduje proces, jego rodzic, polecenie i kontekst, a nie reputacja celu.
+- **Zasadne zdarzenia ze strasznymi wskaźnikami:** agent na młodej domenie bez reputacji, który wygląda jak beacon
+  (regularny odstęp, prawie stałe rozmiary, identyfikator hosta w URL), źródło testu penetracyjnego z reputacją
+  „skaner”, zasadna detekcja na obcej domenie symulacji phishingu.
+- Wiele scenariuszy TP nie ma żadnego zewnętrznego wskaźnika (LSASS, ransomware, PsExec, skan wewnętrzny).
+
+W rozbiorze każdy scenariusz mówi wprost, czego nie rozstrzygała reputacja, a co rozstrzygało zachowanie.
+
 ## Eksport logów do własnego SIEM
 
 ```bash
@@ -123,8 +141,8 @@ wymagane sprawdzenia coś zwracają i że idealna odpowiedź daje 100 pkt.
   `application/json` dla POST.
 - UI renderuje logi wyłącznie przez `textContent` i działa pod CSP `default-src 'none'; script-src 'self'`.
   Zawartość logów traktujemy jak niezaufaną, nawet syntetyczną.
-- Dane są wymyślone: firma, ludzie, hosty i domeny. Adresy IP pochodzą z zakresów dokumentacyjnych
-  (RFC 5737, RFC 2544), a TI i sandbox są symulowane, więc żaden prawdziwy wskaźnik nie jest oznaczony jako złośliwy.
+- Dane są wymyślone: firma, ludzie, hosty i domeny. Adresy IP pochodzą ze wspólnej puli zakresów
+  dokumentacyjnych (RFC 5737, RFC 2544), a TI i sandbox są symulowane, więc żaden prawdziwy wskaźnik nie jest oznaczony jako złośliwy.
 - To trener rozumowania, nie replika konkretnego produktu. Pola ESET PROTECT i Sysmon odwzorowują prawdziwe nazwy,
   ale wartości (nazwy detekcji, reputacja LiveGrid) są symulowane.
 - Zbiór 16 scenariuszy jest skończony: po kilkunastu podejściach rozpoznasz schematy. Wtedy pomagają poziom 3,

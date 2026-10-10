@@ -1,6 +1,9 @@
 import http.client
 import json
+import random
+import re
 import threading
+from pathlib import Path
 
 import pytest
 from typer.testing import CliRunner
@@ -12,6 +15,7 @@ from hunterscope.trainer.model import ACTIONS
 from hunterscope.trainer.scenarios import REGISTRY, generate, make_token, parse_token, variant_for
 from hunterscope.trainer.server import make_server
 from hunterscope.trainer.store import TrainerStore
+from hunterscope.trainer.world import World
 
 CASES = [(t, d) for t in REGISTRY for d in (1, 2, 3)]
 
@@ -155,6 +159,69 @@ def test_debrief_reveals_truth_and_lessons():
     scn = generate(_find("beaconing", 2, "tp"))
     d = scoring.debrief(scn, _perfect(scn))
     assert d["truth"]["verdict"] == "tp" and d["lessons"]["checklist"] and d["key_events"] and d["context"]["ti"]
+
+
+# --- indicators must not give the verdict away --------------------------------------------------------------------
+def _pool(ip: str) -> str:
+    a, b, c, _ = ip.split(".")
+    return "198.18/15" if a == "198" and b in ("18", "19") else f"{a}.{b}.{c}"
+
+
+def test_every_external_role_draws_from_the_same_ip_pool():
+    w = World(random.Random(7), "t")
+    draws = {role: [_pool(getattr(w, role)()) for _ in range(800)] for role in ("attacker_ip", "service_ip", "mobile_ip")}
+    pools = {p for d in draws.values() for p in d}
+    assert len(pools) == 4
+    for role, d in draws.items():
+        for pool in pools:
+            assert 0.18 < d.count(pool) / len(d) < 0.32, (role, pool)
+
+
+def test_office_egress_address_is_not_a_constant_and_has_a_ti_record():
+    nats = set()
+    for seed in range(40):
+        scn = generate(make_token(seed, "mail_rule", 1))
+        nat = next(e.fields["IpAddress"] for e in scn.events if e.source == "entra")
+        assert lookup(scn, "ti", nat)["found"]
+        nats.add(nat)
+    assert len(nats) > 10
+
+
+def test_scenarios_do_not_hardcode_ranges():
+    root = Path(__file__).resolve().parent.parent / "src" / "hunterscope" / "trainer" / "scenarios"
+    for f in root.glob("*.py"):
+        assert not re.search(r"\b(192\.0\.2|198\.51\.100|203\.0\.113|198\.1[89])\.\d", f.read_text()), f.name
+
+
+def test_attacker_infrastructure_comes_in_three_shapes():
+    w = World(random.Random(3), "t")
+    hosts = [w.threat_host(d) for d in (1, 2, 3) for _ in range(300)]
+    assert {h.kind for h in hosts} == {"fresh", "typosquat", "service"}
+    assert any(h.kind == "typosquat" and h.name.rsplit(".", 1)[1] in ("com", "net", "org", "pl", "eu") for h in hosts)
+    hard = [w.threat_host(3, kind="typosquat") for _ in range(100)]
+    assert max(h.age_days for h in hard) >= 90 and {h.category for h in hard} <= {"Business", "Technology", "Uncategorized"}
+    assert all(not w.threat_host(2, site_only=True).kind == "service" for _ in range(100))
+    assert all(h.url("x").startswith("https://" + h.name) for h in hosts)
+
+
+def test_abused_service_is_clean_by_reputation_so_only_behaviour_betrays_it():
+    seen = set()
+    for seed in range(300):
+        scn = generate(make_token(seed, "ps_encoded", 2))
+        if scn.truth.verdict != "tp":
+            continue
+        domain = next(k.split(":", 1)[1] for k in scn.truth.expected_lookups if k.startswith("ti:"))
+        verdict = lookup(scn, "ti", domain)["records"][0][2][1]
+        seen.add("clean" if verdict.startswith("Czysty") else "flagged")
+    assert seen == {"clean", "flagged"}
+
+
+def test_benign_cases_can_carry_scary_indicators():
+    scn = generate(_find("beaconing", 2, "btp"))
+    domain = next(k.split(":", 1)[1] for k in scn.truth.expected_lookups if k.startswith("ti:"))
+    rec = dict(lookup(scn, "ti", domain)["records"][0])
+    assert "Brak jednoznacznej" in rec["Werdykt TI (symulacja)"] and "dni" in rec["Wiek rejestracji domeny"]
+    assert scoring.evaluate(scn, _perfect(scn))["score"] == 100
 
 
 # --- store ---------------------------------------------------------------------------------------------------------

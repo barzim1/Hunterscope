@@ -29,7 +29,7 @@ hunterscope = "hunterscope.cli:app"
 where = ["src"]
 
 [tool.setuptools.package-data]
-hunterscope = ["config/*.yaml", "templates/*.j2"]
+hunterscope = ["config/*.yaml", "templates/*.j2", "trainer/static/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -43,3 +43,5 @@ select = ["E", "F", "I", "UP", "B"]
 
 [tool.ruff.lint.per-file-ignores]
 "src/hunterscope/cli.py" = ["E501"]  # Typer Annotated signatures
+"src/hunterscope/trainer/**" = ["E501"]  # scenario prose and log line formats are long strings
+"tests/test_trainer.py" = ["E501"]

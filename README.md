@@ -52,6 +52,15 @@ look-alike-but-benign activity must stay quiet. Example output without installin
 
 ![Shift handover](docs/img/handover-light.png)
 
+## Trainer: practise the verdict
+
+`hunterscope train` starts a local web UI that generates SIEM / ESET-style alerts with correlated logs (Sysmon,
+Windows Security, proxy, DNS, firewall, Entra ID, M365, mail, WAF), hides the verdict, and scores your decision as
+TP, benign TP or FP. After the verdict it shows the key events, the red herrings, what to check, and a model
+ticket note. 16 scenario types, three difficulty levels, a night-shift queue with a realistic FP-heavy mix,
+weak-spot practice and a mistake profile. Standard library only, synthetic data. Documentation (in Polish):
+[`docs/trainer.md`](docs/trainer.md).
+
 ## How I checked it works
 
 Synthetic scenarios prove the rules do what I wrote; they do not prove the rules catch anything real. So the
@@ -105,6 +114,7 @@ src/hunterscope/
   ingest/      parsers + loader (entra, ual, windows/sysmon, eml)       -> normalized Event
   detect/      rules.py (stateful rules + meta rules), engine.py
   score.py  redactor.py  triage.py  casestore.py  handover.py  report.py  coverage.py  cli.py
+  trainer/     scenarios/ (16 templates), sources.py, scoring.py, lookups.py, store.py, server.py, static/ (UI)
   config/      rules.yaml, redactor.yaml          templates/   Jinja2 (md, html)
 tests/         pytest: each rule has positive and benign cases
 scripts/       generate_samples.py, fetch_datasets.py, build_screenshots.py

@@ -348,3 +348,62 @@ def coverage_cmd(
         err.print(f"[green]Coverage report written to {output}[/green]")
     else:
         typer.echo(text)
+
+
+@app.command("train")
+def train_cmd(
+    port: Annotated[int, typer.Option(help="Local port for the trainer UI")] = 8765,
+    db: Annotated[Path | None, typer.Option("--db", help="Progress DB (default: $HUNTERSCOPE_TRAINER_DB or ~/.hunterscope/trainer.db)")] = None,
+    no_browser: Annotated[bool, typer.Option("--no-browser", help="Do not open a browser tab")] = False,
+) -> None:
+    """SOC L1 trainer: generated alerts and logs, hidden verdict, scored debrief (local web UI, synthetic data)."""
+    import webbrowser
+
+    from hunterscope.trainer.server import make_server
+    from hunterscope.trainer.store import TrainerStore, default_db_path
+
+    store = TrainerStore(db or default_db_path())
+    try:
+        server = make_server("127.0.0.1", port, store)
+    except OSError as exc:
+        err.print(f"[red]Cannot listen on 127.0.0.1:{port}: {exc}[/red]")
+        raise typer.Exit(2) from exc
+    url = f"http://localhost:{server.server_address[1]}/"
+    err.print(f"Trainer running at [bold]{url}[/bold] (progress: {store.path}). Ctrl+C to stop.")
+    if not no_browser:
+        webbrowser.open(url)
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        err.print("Stopped.")
+    finally:
+        server.server_close()
+
+
+@app.command("train-export")
+def train_export_cmd(
+    token: Annotated[str, typer.Argument(help="Scenario token, e.g. 482133-ps_encoded-2-p")],
+    output: Annotated[Path | None, typer.Option("--output", "-o", help="NDJSON file (default: stdout)")] = None,
+    with_truth: Annotated[bool, typer.Option("--with-truth", help="Include the verdict and key/herring marks (spoils the exercise)")] = False,
+) -> None:
+    """Export a scenario's events as NDJSON, to practice queries in your own SIEM."""
+    from hunterscope.trainer.scenarios import generate
+
+    try:
+        scn = generate(token)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    lines = []
+    for e in scn.events:
+        row = e.public()
+        if with_truth:
+            row |= {"role": e.role, "note": e.note}
+        lines.append(json.dumps(row, ensure_ascii=False))
+    if with_truth:
+        lines.append(json.dumps({"truth": scn.truth.verdict, "summary": scn.truth.summary}, ensure_ascii=False))
+    text = "\n".join(lines) + "\n"
+    if output:
+        output.write_text(text, encoding="utf-8")
+        err.print(f"[green]{len(scn.events)} events written to {output}[/green]")
+    else:
+        typer.echo(text, nl=False)

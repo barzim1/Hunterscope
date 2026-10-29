@@ -4,6 +4,7 @@ Detailed documentation. The short version is in the [README](../README.md).
 
 Contents: [Quick start](#quick-start) · [Reports](#reports) · [Detections](#detections-stateful-correlation-srchunterscopeconfigrulesyaml) ·
 [Phishing triage](#phishing-triage) · [Cases and shift handover](#cases-and-shift-handover) ·
+[Explaining what you see](#explaining-what-you-see-explain) ·
 [Measured coverage](#measured-coverage) · [Score](#score) · [Redaction](#redaction) · [Data](#data) ·
 [Roadmap](#roadmap--not-done)
 
@@ -117,6 +118,43 @@ Rules that keep the handover trustworthy:
 
 The case DB holds **real, un-redacted data**; it is git-ignored, single-writer and meant for a local disk, not a
 network share. Redaction happens on output (`--redact`), never in storage.
+
+## Explaining what you see (`explain`)
+
+For the log line you do not understand. Two modes:
+
+```bash
+hunterscope explain 4688 certutil.exe 50126 T1003.001      # look terms up
+hunterscope explain sysmon:10                              # prefix narrows a bare number
+hunterscope explain -i $S -u jkowalski -t 7d               # explain a whole dossier
+hunterscope explain -i $S -u jkowalski --redact -o ex.md   # target pseudonymized
+```
+
+A term resolves against: Windows event ids, Sysmon event ids, Entra ID error codes (`AADSTS50126` also works),
+M365 audit operations, process names (a full path is fine, `.exe` optional), ATT&CK ids and HunterScope rule ids.
+A bare number can be several of those at once; every match is shown. Prefixes: `event:` `sysmon:` `entra:`
+`proc:` `ual:` `tech:` `rule:`.
+
+Every entry has the same shape: **what it is, the risk, what normal looks like, what to check next, source**.
+It is context for a decision, not a verdict: whether this occurrence is malicious depends on who, from where, and
+what came before and after.
+
+Dossier mode explains each rule that fired (once, even if it fired several times) with its ATT&CK techniques, then
+the kinds of events in the window, those that are evidence of a finding first. Routine noise (a successful sign-in)
+is hidden. Event kinds that the base does not describe are listed under **Bez wyjaśnienia**, so "unremarkable" is
+never confused with "not covered". Unknown process names are not listed there (nearly all processes are ordinary).
+
+Design decisions:
+- **Nothing is generated.** The base (`config/knowledge.yaml`) is written by hand. A term that is not in it is
+  reported as unknown and the command exits 1; it is never guessed.
+- **The base cannot silently fall behind the tool.** Tests fail if a rule, an ATT&CK technique used by a rule, an
+  Entra code the parser names, or a Windows/Sysmon event the parser handles has no entry.
+- **Your own knowledge.** `--kb my.yaml` is merged by key: add your internal tools and agents, or override a
+  wording. An entry missing a required field is an error, not a blank section.
+- Text is Polish. Source links point to Microsoft, MITRE ATT&CK and LOLBAS pages. The entries were written from
+  general knowledge of those sources and have **not** been checked line by line against the pages, and the links
+  have not been machine-verified for reachability. Treat a wrong statement or a dead link as a bug; verify a
+  security-relevant claim at the source before acting on it.
 
 ## Measured coverage
 

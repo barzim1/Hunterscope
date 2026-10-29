@@ -9,13 +9,15 @@ from pathlib import Path
 from typing import Annotated
 
 import typer
+import yaml
 from rich.console import Console
 from rich.markdown import Markdown
 from rich.table import Table
 
 from hunterscope import coverage as cov
+from hunterscope import explain as exp
 from hunterscope.casestore import STATUSES, CaseStore, default_db_path, iso
-from hunterscope.config.loader import load_redactor_config, load_rules_config
+from hunterscope.config.loader import load_knowledge, load_redactor_config, load_rules_config
 from hunterscope.handover import Handover, build_handover
 from hunterscope.handover import render_html as render_handover_html
 from hunterscope.handover import render_markdown as render_handover_md
@@ -56,6 +58,15 @@ def _parse_timestamp(value: str, option: str) -> datetime:
 
 def _parse_until(value: str) -> datetime:
     return datetime.now(timezone.utc) if value == "now" else _parse_timestamp(value, "--until")
+
+
+def _resolve_anchor(anchor: str) -> datetime | None:
+    """'latest' -> None (end the window at the target's newest event), 'now', or an ISO timestamp."""
+    if anchor == "latest":
+        return None
+    if anchor == "now":
+        return datetime.now(timezone.utc)
+    return _parse_timestamp(anchor, "--anchor")
 
 
 def _redactor(redactor_config: Path | None, key_env: str | None, users: list[str], hosts: list[str]) -> Redactor:
@@ -103,21 +114,13 @@ def triage(
     except ValueError as exc:
         raise typer.BadParameter(str(exc)) from exc
 
-    from datetime import datetime, timezone
-
-    anchor_dt = None
-    if anchor == "now":
-        anchor_dt = datetime.now(timezone.utc)
-    elif anchor != "latest":
-        anchor_dt = _parse_timestamp(anchor, "--anchor")
-
     cfg = load_rules_config(config)
     loaded = load_events(inputs)
     kind, target = ("user", user) if user else ("host", host or "")
     try:
         dossier = build_dossier(
             loaded.events, kind, target, window, cfg,
-            anchor=anchor_dt, skipped=loaded.skipped,
+            anchor=_resolve_anchor(anchor), skipped=loaded.skipped,
         )
     except LookupError as exc:
         err.print(f"[red]{exc}[/red]")
@@ -165,6 +168,88 @@ def rules(config: Annotated[Path | None, typer.Option()] = None) -> None:
         table.add_row(rid, "yes" if r.get("enabled", True) else "no", r["severity"],
                       str(r["weight"]), r["tactic"], ", ".join(r["mitre"]))
     Console().print(table)
+
+
+@app.command("explain")
+def explain_cmd(
+    terms: Annotated[
+        list[str] | None,
+        typer.Argument(help="What to explain: Windows/Sysmon event id (4688), Entra code (50126), process "
+                            "(certutil.exe), M365 operation, ATT&CK id (T1003.001) or rule id. Prefixes event: "
+                            "sysmon: entra: proc: ual: tech: rule: narrow the search."),
+    ] = None,
+    inputs: Annotated[
+        list[Path] | None,
+        typer.Option("--input", "-i", exists=True, help="Instead of terms: explain what a dossier for --user/--host contains"),
+    ] = None,
+    user: Annotated[str | None, typer.Option("--user", "-u", help="UPN, sAMAccountName or DOMAIN\\user")] = None,
+    host: Annotated[str | None, typer.Option("--host", "-H", help="Hostname (FQDN suffix ignored)")] = None,
+    timerange: Annotated[str, typer.Option("--timerange", "-t", help="e.g. 90m, 24h, 7d")] = "24h",
+    anchor: Annotated[str, typer.Option(help="Window end: 'latest' (offline data), 'now' or ISO timestamp")] = "latest",
+    redact: Annotated[bool, typer.Option("--redact", help="Pseudonymize the target before output (dossier mode)")] = False,
+    key_env: Annotated[str | None, typer.Option(help="Env var holding an HMAC key for stable pseudonyms across runs")] = None,
+    fmt: Annotated[str, typer.Option("--format", "-f", help="md | json")] = "md",
+    output: Annotated[Path | None, typer.Option("--output", "-o")] = None,
+    kb: Annotated[Path | None, typer.Option(help="Knowledge base overriding/extending the defaults")] = None,
+    config: Annotated[Path | None, typer.Option(help="Rules config overriding defaults")] = None,
+    redactor_config: Annotated[Path | None, typer.Option(help="Redactor config overriding defaults")] = None,
+) -> None:
+    """Explain in plain language what an event, code, process or dossier means (offline knowledge base)."""
+    if fmt not in {"md", "json"}:
+        raise typer.BadParameter("--format must be md or json")
+    dossier_mode = bool(inputs)
+    if dossier_mode == bool(terms):
+        raise typer.BadParameter("give either terms to look up, or --input with --user/--host (not both)")
+    if dossier_mode and (user is None) == (host is None):
+        raise typer.BadParameter("provide exactly one of --user / --host")
+    if not dossier_mode and (user or host or redact):
+        raise typer.BadParameter("--user/--host/--redact only apply together with --input")
+    try:
+        base = exp.KnowledgeBase(load_knowledge(kb))
+    except (OSError, ValueError, yaml.YAMLError) as exc:
+        raise typer.BadParameter(f"cannot load knowledge base: {exc}") from exc
+
+    missing = False
+    try:
+        if dossier_mode:
+            try:
+                window = parse_timerange(timerange)
+            except ValueError as exc:
+                raise typer.BadParameter(str(exc)) from exc
+            cfg = load_rules_config(config)
+            loaded = load_events(inputs or [])
+            kind, target = ("user", user) if user else ("host", host or "")
+            try:
+                dossier = build_dossier(loaded.events, kind, target, window, cfg,
+                                        anchor=_resolve_anchor(anchor), skipped=loaded.skipped)
+            except LookupError as exc:
+                err.print(f"[red]{exc}[/red]")
+                raise typer.Exit(2) from exc
+            explained = exp.explain_dossier(dossier, base)
+            text = json.dumps(exp.dossier_to_dict(explained), indent=2, ensure_ascii=False) if fmt == "json" \
+                else exp.render_dossier_markdown(explained)
+            if redact:
+                redactor = _redactor(redactor_config, key_env, [user_key(user)] if user else [],
+                                     [host_key(host)] if host else [])
+                text = redactor.redact(text)
+        else:
+            results = [(t, exp.lookup(t, base)) for t in terms or []]
+            missing = any(not found for _, found in results)
+            text = json.dumps(exp.lookup_to_dict(results), indent=2, ensure_ascii=False) if fmt == "json" \
+                else exp.render_lookup_markdown(results)
+    except ValueError as exc:  # a knowledge base entry missing a required field
+        err.print(f"[red]{exc}[/red]")
+        raise typer.Exit(2) from exc
+
+    if output:
+        output.write_text(text, encoding="utf-8")
+        err.print(f"[green]Explanation written to {output}[/green]")
+    elif fmt == "md" and sys.stdout.isatty():
+        Console().print(Markdown(text))
+    else:
+        typer.echo(text)
+    if missing:
+        raise typer.Exit(1)
 
 
 @case_app.command("list")

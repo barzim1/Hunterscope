@@ -30,6 +30,8 @@ hunterscope triage -i data/samples -u jkowalski                       # terminal
 hunterscope triage -i data/samples -u jkowalski -f html -o dossier.html    # standalone HTML report
 hunterscope triage -i data/samples -u jkowalski --redact              # USER_A, EXT_EMAIL_1, ...
 hunterscope rules                                                     # rules and their ATT&CK mapping
+hunterscope explain 4688 certutil.exe 50126 T1003.001                 # what does this mean? (offline, Polish)
+hunterscope explain -i data/samples -u jkowalski -t 7d                # explain everything in a dossier
 ```
 
 `data/samples` is synthetic: one account taken over through a phishing mail (password spraying, MFA fatigue,
@@ -49,6 +51,7 @@ look-alike-but-benign activity must stay quiet. Example output without installin
 | **Cases** | SQLite store. Closing or escalating needs a written reason, closed cases are immutable, every change is an append-only audit entry. |
 | **Handover** | `shift-summary`: unresolved (flagged `STALE` after 24 h untouched), escalated, closed FP/TP, each with the analyst's reason. |
 | **Report** | Markdown, JSON, or one static HTML file: no JavaScript, no network requests, escapes everything it renders. |
+| **Explain** | `explain` says in plain language what an event id, Entra code, process, M365 operation, ATT&CK technique or rule means: what it is, the risk, what is normal, what to check next, with a source link. A curated offline knowledge base (110 entries, Polish), nothing generated: an unknown term is reported as unknown, never guessed. Extend it with `--kb`. |
 
 ![Shift handover](docs/img/handover-light.png)
 
@@ -104,8 +107,8 @@ machine account instead of the target user. Both are fixed and covered by tests.
 src/hunterscope/
   ingest/      parsers + loader (entra, ual, windows/sysmon, eml)       -> normalized Event
   detect/      rules.py (stateful rules + meta rules), engine.py
-  score.py  redactor.py  triage.py  casestore.py  handover.py  report.py  coverage.py  cli.py
-  config/      rules.yaml, redactor.yaml          templates/   Jinja2 (md, html)
+  score.py  redactor.py  triage.py  casestore.py  handover.py  report.py  coverage.py  explain.py  cli.py
+  config/      rules.yaml, redactor.yaml, knowledge.yaml     templates/   Jinja2 (md, html)
 tests/         pytest: each rule has positive and benign cases
 scripts/       generate_samples.py, fetch_datasets.py, build_screenshots.py
 docs/          reference.md (full docs), coverage.md (measured), examples/, img/

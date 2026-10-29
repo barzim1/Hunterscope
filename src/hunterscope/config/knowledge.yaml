@@ -1,0 +1,1526 @@
+# Baza wiedzy dla `hunterscope explain`: wyjaśnienia pisane ręcznie, nic nie jest generowane w locie.
+# Dodawaj i nadpisuj wpisy własnym plikiem: `hunterscope explain --kb moja-baza.yaml ...` (scalane po kluczu).
+#
+# Pola wpisu (wszystkie wymagane): title, what (co to jest), risk (jakie zagrożenie / co może się stać),
+# normal (jak wygląda normalnie), check (lista: co sprawdzić dalej), source (URL do dokumentacji).
+# Opcjonalnie: quiet: true ukrywa wpis w widoku dossier (zostaje dostępny przez `explain TERMIN`).
+#
+# To jest KONTEKST do podjęcia decyzji, nie werdykt. Wpis mówi, co dany artefakt znaczy w ogóle;
+# czy w TYM przypadku jest groźny, rozstrzyga kontekst (kto, skąd, kiedy, co było przedtem i potem).
+
+windows_events:
+  "4624":
+    title: "4624: Udane logowanie"
+    what: >-
+      Konto zalogowało się do maszyny. Pole Logon Type mówi, jak: 2 przy klawiaturze, 3 przez sieć (np. udział
+      plikowy), 4 zadanie wsadowe, 5 usługa, 7 odblokowanie ekranu, 8 sieć z hasłem jawnym, 9 NewCredentials
+      (runas /netonly), 10 RDP, 11 logowanie z pamięci podręcznej.
+    risk: >-
+      Samo zdarzenie jest zwyczajne i bardzo częste. Groźne bywa w kontekście: typ 10 lub 3 z nietypowego adresu,
+      logowanie poza godzinami pracy, konto uprzywilejowane na zwykłej stacji, albo to samo konto na wielu hostach
+      w krótkim czasie (ruch boczny).
+    normal: >-
+      Użytkownik loguje się typem 2, 7 lub 11 na własnej stacji w godzinach pracy; konta usług typem 5; maszyny
+      domenowe łączą się z serwerami plików typem 3.
+    check:
+      - "Logon Type i adres źródłowy: czy to zwyczajny sposób logowania tego konta?"
+      - "Czy konto loguje się zwykle na ten host i o tej porze?"
+      - "Czy tuż przed sukcesem były nieudane próby (4625) z tego samego adresu?"
+      - "Jakie procesy uruchomiono zaraz po logowaniu (4688 / Sysmon 1)?"
+    source: https://learn.microsoft.com/en-us/windows/security/threat-protection/auditing/event-4624
+
+  "4625":
+    title: "4625: Nieudane logowanie"
+    what: >-
+      Próba logowania nie powiodła się. Pole Status/SubStatus podaje powód: 0xC000006A złe hasło do istniejącego
+      konta, 0xC0000064 konto nie istnieje, 0xC0000234 konto zablokowane, 0xC0000072 konto wyłączone.
+    risk: >-
+      Seria błędów dla jednego konta to zgadywanie hasła (brute force). Jedna lub dwie próby na wiele kont z jednego
+      adresu to password spraying. Jeśli po serii pojawia się udane logowanie (4624), konto jest prawdopodobnie
+      przejęte.
+    normal: >-
+      Pojedyncze pomyłki, zwłaszcza po zmianie hasła, albo stara sesja czy zadanie z nieaktualnym hasłem, które
+      próbuje się logować co stały odstęp czasu.
+    check:
+      - "Ile prób, z ilu adresów, na ile kont?"
+      - "Czy po serii był sukces (4624) z tego samego adresu?"
+      - "Czy konto istnieje (0xC0000064 oznacza zgadywanie nazw użytkowników)?"
+      - "Czy powtarzalny odstęp czasu wskazuje na usługę ze starym hasłem, a nie na człowieka?"
+    source: https://learn.microsoft.com/en-us/windows/security/threat-protection/auditing/event-4625
+
+  "4648":
+    title: "4648: Logowanie z jawnie podanymi poświadczeniami"
+    what: >-
+      Proces zalogował się, podając poświadczenia innego konta niż to, na którym działa (np. runas, mapowanie
+      udziału z innym kontem, zadanie zaplanowane).
+    risk: >-
+      Narzędzia do ruchu bocznego i kradzieży poświadczeń często używają jawnych poświadczeń. Szczególnie ważne,
+      gdy konto docelowe jest administracyjne, a proces nietypowy.
+    normal: >-
+      Administratorzy używający runas, zadania z kontem usługi, mapowanie udziałów sieciowych.
+    check:
+      - "Który proces i które konto użyło poświadczeń, na jaki serwer docelowy?"
+      - "Czy to konto administracyjne i czy ten proces robi to normalnie?"
+    source: https://learn.microsoft.com/en-us/windows/security/threat-protection/auditing/event-4648
+
+  "4672":
+    title: "4672: Przydzielono uprawnienia specjalne nowemu logowaniu"
+    what: >-
+      Logowanie dostało uprawnienia typu administratora (np. SeDebugPrivilege, SeBackupPrivilege). Pojawia się
+      zaraz po 4624 dla kont administracyjnych i SYSTEM.
+    risk: >-
+      Informuje, że to było logowanie z wysokimi uprawnieniami. Zwykły użytkownik z takim zdarzeniem lub konto
+      administracyjne na stacji roboczej, na której nie powinno być, wymaga wyjaśnienia.
+    normal: >-
+      Bardzo częste dla SYSTEM, kont usług i administratorów. Na serwerach domenowych setki dziennie.
+    check:
+      - "Czy to konto ma prawo do uprawnień administracyjnych?"
+      - "Czy pasuje do niego host i godzina logowania (4624 tuż przed)?"
+    source: https://learn.microsoft.com/en-us/windows/security/threat-protection/auditing/event-4672
+
+  "4688":
+    title: "4688: Utworzenie procesu"
+    what: >-
+      System uruchomił nowy proces. Zdarzenie zawiera nazwę pliku i proces nadrzędny, a pełną linię poleceń tylko
+      wtedy, gdy włączono politykę audytu 'Include command line in process creation events'.
+    risk: >-
+      To najlepsze źródło do wykrywania działań atakującego po przejęciu hosta: widać narzędzia (powershell,
+      certutil, whoami) i nietypowe pary rodzic-dziecko (np. Word uruchamiający cmd).
+    normal: >-
+      Setki dziennie: explorer, svchost, aktualizacje, narzędzia IT. Ścieżki zwykle w System32 lub Program Files.
+    check:
+      - "Proces nadrzędny: czy ma sens (Word uruchamiający powershell nie ma)?"
+      - "Linia poleceń: zakodowana, pobiera coś z sieci, wyłącza zabezpieczenia?"
+      - "Ścieżka pliku: System32 czy Temp, AppData, Downloads?"
+      - "Jakie konto i co działo się w ciągu kilku minut wokół?"
+    source: https://learn.microsoft.com/en-us/windows/security/threat-protection/auditing/event-4688
+
+  "4697":
+    title: "4697: Zainstalowano usługę"
+    what: >-
+      W systemie zarejestrowano nową usługę (w dzienniku Security). Ten sam fakt widać jako 7045 w dzienniku
+      System.
+    risk: >-
+      Usługi to częsty sposób na trwałą obecność i ruch boczny (PsExec instaluje usługę PSEXESVC). Podejrzane są
+      losowe nazwy i pliki z Temp lub z udziałów sieciowych.
+    normal: >-
+      Instalacja oprogramowania, sterowników, agentów, zwykle przez administratora lub system zarządzania.
+    check:
+      - "Nazwa usługi i ścieżka pliku (Service File Name): znane oprogramowanie?"
+      - "Konto, które ją zainstalowało, i czy była zaplanowana zmiana?"
+      - "Czy ta sama usługa pojawia się na wielu hostach naraz?"
+    source: https://learn.microsoft.com/en-us/windows/security/threat-protection/auditing/event-4697
+
+  "4698":
+    title: "4698: Utworzono zadanie zaplanowane"
+    what: >-
+      Ktoś utworzył zadanie w Harmonogramie zadań. Zdarzenie zawiera nazwę, autora, wyzwalacz i akcję.
+    risk: >-
+      Mechanizm trwałej obecności i wykonywania kodu o zadanej porze. Podejrzane: akcja uruchamiająca powershell,
+      skrypt z Temp lub dziwna nazwa udająca zadanie systemowe.
+    normal: >-
+      Zadania instalowane przez oprogramowanie (aktualizatory, kopie zapasowe) i administratorów.
+    check:
+      - "Co dokładnie uruchamia zadanie i z jakiego miejsca?"
+      - "Kto je utworzył i czy to zaplanowana zmiana?"
+    source: https://learn.microsoft.com/en-us/windows/security/threat-protection/auditing/event-4698
+
+  "4719":
+    title: "4719: Zmieniono politykę audytu"
+    what: >-
+      Zmieniono ustawienia, co system zapisuje w dzienniku zdarzeń.
+    risk: >-
+      Atakujący wyłącza audyt, żeby jego działania nie zostały zapisane (technika T1562.002). Zdarzenie warto
+      traktować poważnie, jeśli nie było zaplanowanej zmiany.
+    normal: >-
+      Zmiany GPO przez administratorów, zgodnie z procesem.
+    check:
+      - "Kto i jaka kategoria audytu została wyłączona?"
+      - "Czy była zmiana w GPO lub ticket?"
+    source: https://learn.microsoft.com/en-us/windows/security/threat-protection/auditing/event-4719
+
+  "4720":
+    title: "4720: Utworzono konto użytkownika"
+    what: >-
+      W systemie lub domenie utworzono nowe konto.
+    risk: >-
+      Atakujący zakłada własne konto, żeby mieć dostęp, gdy przejęte konto zostanie zablokowane. Szczególnie
+      groźne w połączeniu z dodaniem do grupy administratorów (4728, 4732, 4756).
+    normal: >-
+      Onboarding pracowników według procedury, wykonywany przez dział IT.
+    check:
+      - "Kto utworzył konto i czy jest zgłoszenie na nowego pracownika?"
+      - "Czy konto trafiło do grupy uprzywilejowanej zaraz po utworzeniu?"
+    source: https://learn.microsoft.com/en-us/windows/security/threat-protection/auditing/event-4720
+
+  "4728": &group_add
+    title: "4728: Dodano członka do globalnej grupy zabezpieczeń"
+    what: >-
+      Do grupy zabezpieczeń dodano konto. 4728 oznacza grupę globalną, 4732 lokalną (np. Administrators),
+      4756 uniwersalną.
+    risk: >-
+      Eskalacja uprawnień lub trwała obecność: atakujący dodaje własne lub przejęte konto do Administrators,
+      Domain Admins albo Remote Desktop Users.
+    normal: >-
+      Zaplanowane zmiany (ticket, onboarding), wykonywane przez administratorów z ich kont.
+    check:
+      - "Do jakiej grupy? Wrażliwe: Domain Admins, Enterprise Admins, Administrators, Remote Desktop Users."
+      - "Kto to zrobił (pole Subject) i czy jest zgłoszenie zmiany?"
+      - "Czy dodane konto jest nowe (zdarzenie 4720)?"
+    source: https://learn.microsoft.com/en-us/windows/security/threat-protection/auditing/event-4728
+
+  "4732":
+    <<: *group_add
+    title: "4732: Dodano członka do lokalnej grupy zabezpieczeń"
+    source: https://learn.microsoft.com/en-us/windows/security/threat-protection/auditing/event-4732
+
+  "4756":
+    <<: *group_add
+    title: "4756: Dodano członka do uniwersalnej grupy zabezpieczeń"
+    source: https://learn.microsoft.com/en-us/windows/security/threat-protection/auditing/event-4756
+
+  "4740":
+    title: "4740: Konto zostało zablokowane"
+    what: >-
+      Konto zablokowano po zbyt wielu nieudanych próbach logowania. Zdarzenie podaje, z jakiej maszyny
+      pochodziły próby.
+    risk: >-
+      Często skutek ataku zgadywania haseł, ale najczęściej zwykłej pomyłki. Pole Caller Computer Name wskazuje
+      źródło prób.
+    normal: >-
+      Użytkownik po zmianie hasła z zapisaną starą wersją na telefonie lub w zmapowanym dysku.
+    check:
+      - "Z jakiej maszyny (Caller Computer Name) pochodziły próby?"
+      - "Czy to stacja użytkownika, czy obcy host?"
+    source: https://learn.microsoft.com/en-us/windows/security/threat-protection/auditing/event-4740
+
+  "4768":
+    title: "4768: Zażądano biletu Kerberos (TGT)"
+    what: >-
+      Kontroler domeny dostał prośbę o bilet uwierzytelniający. Kod wyniku: 0x0 sukces, 0x6 nie ma takiego
+      konta, 0x18 złe hasło, 0x12 konto zablokowane, wyłączone lub wygasłe.
+    risk: >-
+      Wiele błędów 0x18 lub 0x6 z jednego adresu to zgadywanie haseł lub nazw kont przez Kerberos. Zapytania
+      o konta bez wymaganego pre-auth to ślad ataku AS-REP roasting.
+    normal: >-
+      Jedno żądanie przy każdym logowaniu domenowym i odświeżeniu biletu, dla ludzi i maszyn.
+    check:
+      - "Kod wyniku i adres źródłowy; ile kont z jednego adresu?"
+      - "Czy konto ma wyłączone pre-authentication (typowe dla AS-REP roasting)?"
+    source: https://learn.microsoft.com/en-us/windows/security/threat-protection/auditing/event-4768
+
+  "4769":
+    title: "4769: Zażądano biletu usługi Kerberos"
+    what: >-
+      Konto poprosiło kontroler domeny o bilet do konkretnej usługi (SPN), np. serwera SQL.
+    risk: >-
+      Atak Kerberoasting polega na masowym żądaniu biletów do kont usług, zwykle z szyfrowaniem RC4 (Ticket
+      Encryption Type 0x17), po czym łamie się je offline. Wiele takich żądań jednego konta w krótkim czasie jest
+      podejrzane.
+    normal: >-
+      Setki dziennie: każdy dostęp do usługi domenowej (udziały, SQL, HTTP) wymaga takiego biletu.
+    check:
+      - "Szyfrowanie 0x17 (RC4) dla wielu różnych usług z jednego konta?"
+      - "Czy to konto zwykle łączy się z tymi usługami?"
+    source: https://learn.microsoft.com/en-us/windows/security/threat-protection/auditing/event-4769
+
+  "4776":
+    title: "4776: Kontroler domeny sprawdził poświadczenia NTLM"
+    what: >-
+      Uwierzytelnienie NTLM zostało zweryfikowane przez kontroler domeny. Pole Error Code 0x0 oznacza sukces,
+      0xC000006A złe hasło, 0xC0000064 brak konta.
+    risk: >-
+      NTLM jest częściej celem ataków (pass-the-hash, zgadywanie haseł) niż Kerberos. Dużo błędów z jednego
+      hosta wskazuje na brute force.
+    normal: >-
+      Starsze aplikacje i dostęp po adresie IP zamiast nazwy; w nowoczesnych środowiskach coraz rzadziej.
+    check:
+      - "Pole Source Workstation i kod błędu; ile kont z tego hosta?"
+      - "Dlaczego NTLM, a nie Kerberos? Starsza aplikacja czy dostęp po adresie IP?"
+    source: https://learn.microsoft.com/en-us/windows/security/threat-protection/auditing/event-4776
+
+  "5140":
+    title: "5140: Uzyskano dostęp do udziału sieciowego"
+    what: >-
+      Ktoś połączył się z udziałem plikowym na tej maszynie. Udziały C$, ADMIN$ i IPC$ to udziały administracyjne.
+    risk: >-
+      Połączenie ze stacji roboczej do C$ lub ADMIN$ innej maszyny to typowy ruch boczny (kopiowanie narzędzi,
+      zdalne uruchamianie usług).
+    normal: >-
+      Systemy zarządzania, administratorzy z konsoli, kopie zapasowe. Zwykli użytkownicy łączą się z udziałami
+      zespołowymi, nie administracyjnymi.
+    check:
+      - "Jaki udział, z jakiego adresu i konta?"
+      - "Czy to udział administracyjny i czy konto jest administratorem?"
+    source: https://learn.microsoft.com/en-us/windows/security/threat-protection/auditing/event-5140
+
+  "1102":
+    title: "1102: Wyczyszczono dziennik Security"
+    what: >-
+      Ktoś skasował zawartość dziennika zdarzeń Security. Zdarzenie podaje konto, które to zrobiło.
+    risk: >-
+      Klasyczny sposób zacierania śladów (technika T1070.001). Rzadko ma niewinne wytłumaczenie, więc prawie
+      zawsze wymaga wyjaśnienia.
+    normal: >-
+      Bardzo rzadkie. Zaplanowane prace administracyjne na serwerze testowym lub po awarii.
+    check:
+      - "Kto wyczyścił dziennik i z jakiej sesji?"
+      - "Co działo się na hoście tuż przed wyczyszczeniem (to, co atakujący chciał ukryć)?"
+      - "Czy logi są kopiowane na zewnątrz (SIEM), więc ślady przetrwały?"
+    source: https://learn.microsoft.com/en-us/windows/security/threat-protection/auditing/event-1102
+
+  "4104":
+    title: "4104: Blok skryptu PowerShell (Script Block Logging)"
+    what: >-
+      Zapis treści skryptu PowerShell wykonywanego na hoście, z dziennika Microsoft-Windows-PowerShell/Operational.
+      Widać kod także po zdekodowaniu.
+    risk: >-
+      Pokazuje, co faktycznie wykonano, nawet jeśli linia poleceń była zakodowana. Podejrzane są: Invoke-Expression,
+      DownloadString, FromBase64String, próby obejścia AMSI.
+    normal: >-
+      Wiele bloków generują moduły, skrypty administracyjne i oprogramowanie. Sama obecność nie jest alarmem.
+    check:
+      - "Czy kod pobiera coś z sieci lub dekoduje bloki base64?"
+      - "Jaki proces i konto go uruchomiło (porównaj z 4688)?"
+    source: https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_logging_windows
+
+  "7045":
+    title: "7045: Zainstalowano usługę (dziennik System)"
+    what: >-
+      Menedżer usług zarejestrował nową usługę. To odpowiednik 4697, ale w dzienniku System i dostępny bez
+      dodatkowego audytu.
+    risk: >-
+      Trwała obecność lub ruch boczny (np. PsExec instaluje usługę). Podejrzane: losowe nazwy, ścieżki w Temp
+      lub na udziałach sieciowych.
+    normal: >-
+      Instalacja oprogramowania i sterowników.
+    check:
+      - "Nazwa usługi i ścieżka pliku (Service File Name)."
+      - "Konto użytkownika i czy była zaplanowana zmiana?"
+    source: https://attack.mitre.org/techniques/T1543/003/
+
+sysmon_events:
+  "1":
+    title: "Sysmon 1: Utworzenie procesu"
+    what: >-
+      Sysmon zapisał uruchomienie procesu. W odróżnieniu od 4688 zawsze podaje pełną linię poleceń, sumy
+      kontrolne pliku, proces nadrzędny i konto.
+    risk: >-
+      Podstawowe źródło do wykrywania narzędzi atakującego. Sumy kontrolne pozwalają sprawdzić plik w serwisach
+      reputacji (np. VirusTotal).
+    normal: >-
+      Setki dziennie z narzędzi systemowych i aplikacji. Interesuje to, co odbiega od zwykłego wzorca hosta.
+    check:
+      - "Proces nadrzędny i linia poleceń: zakodowane argumenty, adresy URL, nietypowe przełączniki?"
+      - "Ścieżka pliku i sumy kontrolne (sprawdź hash w serwisie reputacji)."
+    source: https://learn.microsoft.com/en-us/sysinternals/downloads/sysmon
+
+  "3":
+    title: "Sysmon 3: Połączenie sieciowe"
+    what: >-
+      Proces nawiązał połączenie TCP lub UDP. Zdarzenie zawiera proces, adresy i porty.
+    risk: >-
+      Ślad komunikacji z serwerem sterującym (C2). Podejrzane: powershell.exe, rundll32.exe lub mshta.exe łączące
+      się na zewnątrz, połączenia o regularnych odstępach (beaconing).
+    normal: >-
+      Przeglądarki, aktualizacje i klienci poczty, bardzo dużo. Interesują nietypowe procesy nawiązujące połączenia.
+    check:
+      - "Jaki proces i czy zwykle łączy się z siecią?"
+      - "Adres docelowy: sprawdź reputację (ioc-enricher), czy ma regularny odstęp?"
+    source: https://learn.microsoft.com/en-us/sysinternals/downloads/sysmon
+
+  "8":
+    title: "Sysmon 8: CreateRemoteThread"
+    what: >-
+      Jeden proces utworzył wątek w innym procesie.
+    risk: >-
+      Klasyczna technika wstrzykiwania kodu (process injection): złośliwy kod ukrywa się w zaufanym procesie.
+    normal: >-
+      Niektóre programy antywirusowe i EDR, debugery, narzędzia dostępności.
+    check:
+      - "Który proces wstrzykuje i do którego? Czy to znane oprogramowanie ochronne?"
+      - "Czy docelowy proces to ważny proces systemowy (lsass, explorer, svchost)?"
+    source: https://learn.microsoft.com/en-us/sysinternals/downloads/sysmon
+
+  "10":
+    title: "Sysmon 10: Dostęp do innego procesu (ProcessAccess)"
+    what: >-
+      Jeden proces otworzył uchwyt do innego z konkretnymi uprawnieniami (pole GrantedAccess). Gdy celem jest
+      lsass.exe, a uprawnienia zawierają bit 0x10 (PROCESS_VM_READ), proces może odczytać pamięć z poświadczeniami.
+    risk: >-
+      Typowy ślad zrzutu poświadczeń z pamięci (Mimikatz, procdump, comsvcs.dll), technika T1003.001. Skutek:
+      atakujący zdobywa hasła i skróty kont, także administratorów.
+    normal: >-
+      Programy antywirusowe (MsMpEng.exe), niektóre agenty monitorujące i narzędzia zarządzania maszynami
+      wirtualnymi. Reguła `lsass_access` ma allowlistę takich źródeł.
+    check:
+      - "Który proces (SourceImage) i skąd uruchomiony (ścieżka, rodzic)?"
+      - "Czy to znane oprogramowanie ochronne, czy narzędzie pojawiające się pierwszy raz?"
+      - "Co zrobiono potem: nowe logowania z tego konta na innych hostach?"
+    source: https://attack.mitre.org/techniques/T1003/001/
+
+  "11":
+    title: "Sysmon 11: Utworzono plik"
+    what: >-
+      Proces utworzył lub nadpisał plik. Zdarzenie zawiera proces, nazwę i ścieżkę.
+    risk: >-
+      Pokazuje upuszczanie narzędzi przez atakującego: pliki wykonywalne i skrypty w Temp, Downloads, w folderze
+      autostartu, tworzone przez Worda lub przeglądarkę.
+    normal: >-
+      Ogromny wolumen: aktualizacje, pliki tymczasowe, pamięć podręczna przeglądarki.
+    check:
+      - "Jaki proces utworzył plik i gdzie?"
+      - "Czy plik jest wykonywalny lub skryptem i czy został zaraz uruchomiony (Sysmon 1)?"
+    source: https://learn.microsoft.com/en-us/sysinternals/downloads/sysmon
+
+  "13":
+    title: "Sysmon 13: Ustawiono wartość rejestru"
+    what: >-
+      Proces zapisał wartość w rejestrze Windows.
+    risk: >-
+      Wpisy w kluczach Run i RunOnce zapewniają trwałą obecność po restarcie (T1547.001). Zmiany ustawień
+      zabezpieczeń lub usług też są ważne.
+    normal: >-
+      Duży ruch: aplikacje zapisują ustawienia, instalatory modyfikują wpisy.
+    check:
+      - "Jaki klucz? Wpisy Run/RunOnce i usługi wymagają sprawdzenia."
+      - "Jaki proces i co wskazuje wartość (ścieżka do pliku w Temp?)?"
+    source: https://learn.microsoft.com/en-us/sysinternals/downloads/sysmon
+
+  "22":
+    title: "Sysmon 22: Zapytanie DNS"
+    what: >-
+      Proces zapytał o nazwę domeny. Zdarzenie zawiera proces i pytaną nazwę.
+    risk: >-
+      Ślad komunikacji z infrastrukturą atakującego: domeny o losowych nazwach (DGA), bardzo długie nazwy
+      (tunelowanie DNS), nietypowy proces pytający o domeny zewnętrzne.
+    normal: >-
+      Bardzo dużo zapytań z przeglądarek i aplikacji.
+    check:
+      - "Jaki proces pyta i czy zwykle łączy się z siecią?"
+      - "Domena: sprawdź reputację i wiek (ioc-enricher)."
+    source: https://learn.microsoft.com/en-us/sysinternals/downloads/sysmon
+
+entra_errors:
+  "0":
+    title: "0: Logowanie udane"
+    what: >-
+      Logowanie do Entra ID zakończyło się sukcesem (brak błędu).
+    risk: >-
+      Samo w sobie nie jest groźne. Ważne w kontekście: sukces zaraz po serii błędów 50126 lub 500121, albo z
+      nowej lokalizacji, jest znakiem możliwego przejęcia konta.
+    normal: >-
+      Zwykła praca użytkownika z jego zwykłych lokalizacji i urządzeń.
+    check:
+      - "Czy lokalizacja i urządzenie zgadzają się z dotychczasowymi?"
+      - "Co było tuż przed: seria błędów, prompty MFA?"
+    source: https://learn.microsoft.com/en-us/entra/identity-platform/reference-error-codes
+    quiet: true
+
+  "50126":
+    title: "50126: Niepoprawna nazwa użytkownika lub hasło"
+    what: >-
+      Podano złe hasło do istniejącego konta (AADSTS50126). Wpis w dzienniku logowań dotyczy istniejącego konta;
+      dla nieistniejącego pojawia się 50034.
+    risk: >-
+      Seria błędów to zgadywanie haseł. Jeden lub dwa błędy na wiele kont z jednego adresu to password
+      spraying. Seria zakończona sukcesem oznacza, że atakujący trafił w hasło.
+    normal: >-
+      Pojedyncze pomyłki, zapisane stare hasło na telefonie lub w kliencie poczty.
+    check:
+      - "Ile prób, z ilu adresów, na ile kont?"
+      - "Czy po serii błędów jest sukces i z jakiego adresu?"
+      - "Czy adres jest znany (VPN firmowy) czy obcy (sprawdź reputację)?"
+    source: https://learn.microsoft.com/en-us/entra/identity-platform/reference-error-codes
+
+  "50053":
+    title: "50053: Konto zablokowane"
+    what: >-
+      Konto zostało zablokowane (smart lockout) po zbyt wielu nieudanych próbach logowania.
+    risk: >-
+      Zwykle wskazuje na trwającą próbę zgadywania haseł. Blokada nie oznacza, że atak się nie powiódł:
+      sprawdź, czy wcześniej był sukces z innego adresu.
+    normal: >-
+      Użytkownik, który wielokrotnie podał złe hasło.
+    check:
+      - "Skąd pochodziły nieudane próby (adresy, kraje)?"
+      - "Czy między nimi był sukces z innego adresu?"
+    source: https://learn.microsoft.com/en-us/entra/identity-platform/reference-error-codes
+
+  "50074":
+    title: "50074: Wymagane silne uwierzytelnienie (MFA)"
+    what: >-
+      Entra ID wymaga drugiego składnika (MFA) i wysłała wyzwanie. To krok normalnego logowania z MFA, a nie
+      błąd użytkownika.
+    risk: >-
+      Samo wyzwanie jest zwyczajne. Ważny jest fakt: skoro system wysłał wyzwanie MFA, hasło było poprawne.
+      Jeśli wyzwanie nie pochodzi od użytkownika, ktoś zna jego hasło.
+    normal: >-
+      Zwykły krok logowania: 50074 lub 50076, potem sukces.
+    check:
+      - "Czy użytkownik faktycznie się wtedy logował?"
+      - "Czy po tym jest seria 500121 (odrzucone prompty)?"
+    source: https://learn.microsoft.com/en-us/entra/identity-platform/reference-error-codes
+
+  "50076":
+    title: "50076: Wymagane MFA (zmiana polityki lub lokalizacji)"
+    what: >-
+      Użytkownik musi użyć MFA z powodu polityki lub nowej lokalizacji. Jak 50074, to normalny krok logowania.
+    risk: >-
+      Poprawne hasło dało dostęp do wyzwania MFA, więc obcy adres z tym kodem sygnalizuje, że ktoś zna hasło.
+    normal: >-
+      Pierwsze logowanie z nowego urządzenia lub kraju.
+    check:
+      - "Czy lokalizacja pasuje do użytkownika?"
+      - "Czy po tym jest sukces z tego samego adresu?"
+    source: https://learn.microsoft.com/en-us/entra/identity-platform/reference-error-codes
+
+  "500121":
+    title: "500121: Błąd uwierzytelnienia podczas MFA"
+    what: >-
+      Drugi składnik nie został zaakceptowany: użytkownik odrzucił powiadomienie, nie odpowiedział albo podał zły
+      kod.
+    risk: >-
+      Seria takich błędów po poprawnym haśle to atak MFA fatigue (zalewanie powiadomieniami, T1621): atakujący zna
+      hasło i liczy, że użytkownik w końcu zaakceptuje prompt. Jeśli po serii jest sukces, konto jest przejęte.
+    normal: >-
+      Pojedynczy błąd: użytkownik nie zdążył odpowiedzieć lub pomylił kod.
+    check:
+      - "Ile promptów w krótkim czasie i czy użytkownik wie o nich?"
+      - "Czy po serii był sukces i z jakiego adresu?"
+      - "Reset hasła i odwołanie sesji, jeśli użytkownik nie rozpoznaje promptów."
+    source: https://learn.microsoft.com/en-us/entra/identity-platform/reference-error-codes
+
+  "50057":
+    title: "50057: Konto wyłączone"
+    what: >-
+      Próba logowania na wyłączone konto.
+    risk: >-
+      Ktoś próbuje użyć konta, które nie powinno już działać, np. po odejściu pracownika. Może to być atak lub
+      stary skrypt.
+    normal: >-
+      Stara aplikacja lub telefon próbujący się łączyć z wyłączonym kontem.
+    check:
+      - "Skąd pochodzą próby i czy konto powinno być wyłączone?"
+    source: https://learn.microsoft.com/en-us/entra/identity-platform/reference-error-codes
+
+  "50055":
+    title: "50055: Hasło wygasło"
+    what: >-
+      Użytkownik użył hasła, które wygasło.
+    risk: >-
+      Zwykle niegroźne. Wygasłe hasło użyte z obcego adresu sugeruje, że ktoś zdobył starą wersję.
+    normal: >-
+      Użytkownik wraca z urlopu i loguje się starym hasłem.
+    check:
+      - "Czy logowanie pochodzi ze zwykłego adresu użytkownika?"
+    source: https://learn.microsoft.com/en-us/entra/identity-platform/reference-error-codes
+
+  "50034":
+    title: "50034: Użytkownik nie istnieje w katalogu"
+    what: >-
+      Podana nazwa konta nie istnieje w tej dzierżawie.
+    risk: >-
+      Wiele takich błędów z jednego adresu to zgadywanie nazw użytkowników (user enumeration), zwykle przed
+      password sprayingiem.
+    normal: >-
+      Literówka w adresie e-mail.
+    check:
+      - "Ile różnych nazw z jednego adresu?"
+      - "Czy pojawiają się później błędy 50126 dla istniejących kont z tego samego adresu?"
+    source: https://learn.microsoft.com/en-us/entra/identity-platform/reference-error-codes
+
+  "53003":
+    title: "53003: Zablokowane przez Conditional Access"
+    what: >-
+      Polityka dostępu warunkowego zablokowała logowanie (np. kraj, urządzenie, ryzyko).
+    risk: >-
+      Zabezpieczenie zadziałało, ale sygnalizuje próbę logowania spoza dozwolonych warunków, często znak, że ktoś
+      zna hasło, a polityka go zatrzymała.
+    normal: >-
+      Użytkownik w podróży lub na niezarządzanym urządzeniu.
+    check:
+      - "Jaka polityka zablokowała i z jakiego kraju lub urządzenia?"
+      - "Czy ten sam adres próbował wcześniej innych kont?"
+    source: https://learn.microsoft.com/en-us/entra/identity-platform/reference-error-codes
+
+  "50079":
+    title: "50079: Wymagana rejestracja MFA"
+    what: >-
+      Konto musi zarejestrować metodę MFA, a jeszcze jej nie ma.
+    risk: >-
+      Atakujący, który zna hasło do konta bez MFA, może zarejestrować własną metodę, a potem go utrzymać.
+      Zdarzenie rejestracji nowej metody MFA ze zmienionym adresem lub urządzeniem zawsze warto sprawdzić.
+    normal: >-
+      Nowy pracownik przy pierwszym logowaniu.
+    check:
+      - "Czy to nowy użytkownik i czy rejestrację zrobił on sam?"
+      - "Jaki adres zarejestrował metodę MFA?"
+    source: https://learn.microsoft.com/en-us/entra/identity-platform/reference-error-codes
+
+  "65001":
+    title: "65001: Aplikacja wymaga zgody"
+    what: >-
+      Użytkownik lub administrator nie wyraził jeszcze zgody na dostęp aplikacji do danych (OAuth).
+    risk: >-
+      W ataku consent phishing użytkownik widzi prośbę o zgodę dla złośliwej aplikacji; po kliknięciu 'Akceptuj'
+      atakujący dostaje dostęp do poczty lub plików bez znajomości hasła (T1528).
+    normal: >-
+      Pierwsze użycie nowej, legalnej aplikacji firmowej.
+    check:
+      - "Jaka aplikacja i kto ją opublikował (zweryfikowany wydawca)?"
+      - "Jakie uprawnienia (Mail.Read, offline_access, Files.ReadWrite.All) i czy użytkownik wyraził zgodę?"
+    source: https://learn.microsoft.com/en-us/entra/identity-platform/reference-error-codes
+
+  "50140":
+    title: "50140: Pytanie 'Pozostać zalogowanym?'"
+    what: >-
+      Entra ID pokazała użytkownikowi pytanie 'Pozostać zalogowanym?'. To przerwanie logowania, a nie błąd.
+    risk: >-
+      Brak zagrożenia.
+    normal: >-
+      Zwykły krok logowania w przeglądarce.
+    check:
+      - "Zwykle nic. Zignoruj, jeśli reszta logowania wygląda normalnie."
+    source: https://learn.microsoft.com/en-us/entra/identity-platform/reference-error-codes
+    quiet: true
+
+  "50058":
+    title: "50058: Brak informacji o sesji (ciche logowanie)"
+    what: >-
+      Aplikacja próbowała zalogować cicho w tle i nie znalazła aktywnej sesji. Użytkownik musi zalogować się
+      jawnie.
+    risk: >-
+      Zwykle brak zagrożenia, to szum po wygaśnięciu sesji przeglądarki.
+    normal: >-
+      Występuje często przy otwarciu aplikacji po dłuższej przerwie.
+    check:
+      - "Zwykle nic. Zwróć uwagę tylko, jeśli towarzyszą mu nietypowe adresy."
+    source: https://learn.microsoft.com/en-us/entra/identity-platform/reference-error-codes
+    quiet: true
+
+ual_operations:
+  "new-inboxrule":
+    title: "New-InboxRule: utworzono regułę skrzynki"
+    what: >-
+      W skrzynce pocztowej utworzono regułę przetwarzania poczty. Zdarzenie zawiera jej parametry: przekazanie,
+      przeniesienie, usunięcie, słowa kluczowe.
+    risk: >-
+      Atakujący po przejęciu skrzynki zakłada reguły: przekazywanie poczty na zewnątrz (T1114.003), ukrywanie
+      wiadomości w RSS lub koszu, usuwanie alertów bezpieczeństwa albo faktur (T1564.008), żeby ofiara niczego nie
+      zauważyła.
+    normal: >-
+      Użytkownik porządkujący pocztę (przenoszenie newsletterów do folderu). Zwykle bez przekazywania na adresy
+      zewnętrzne i bez usuwania.
+    check:
+      - "Czy reguła przekazuje na adres zewnętrzny lub usuwa wiadomości?"
+      - "Czy słowa kluczowe dotyczą faktur, płatności, haseł lub bezpieczeństwa?"
+      - "Skąd i kiedy ją założono: czy to ten sam adres co podejrzane logowanie?"
+    source: https://learn.microsoft.com/en-us/purview/audit-log-activities
+
+  "set-inboxrule":
+    title: "Set-InboxRule: zmieniono regułę skrzynki"
+    what: >-
+      Zmodyfikowano istniejącą regułę poczty.
+    risk: >-
+      Jak przy New-InboxRule: atakujący może zmodyfikować istniejącą, niewinną regułę, dodając przekazywanie
+      na zewnątrz.
+    normal: >-
+      Użytkownik poprawiający własną regułę.
+    check:
+      - "Co zmieniono i czy pojawił się adres zewnętrzny lub usuwanie wiadomości?"
+    source: https://learn.microsoft.com/en-us/purview/audit-log-activities
+
+  "updateinboxrules":
+    title: "UpdateInboxRules: reguły zmienione z klienta Outlook"
+    what: >-
+      Reguły skrzynki zmieniono z poziomu klienta Outlook (a nie przez PowerShell).
+    risk: >-
+      Atakujący używa tej samej techniki co przy New-InboxRule, tylko przez klienta lub interfejs webowy.
+    normal: >-
+      Zwykłe porządkowanie poczty.
+    check:
+      - "Jakie zmiany i czy pojawiło się przekazywanie na zewnątrz lub usuwanie?"
+    source: https://learn.microsoft.com/en-us/purview/audit-log-activities
+
+  "consent to application":
+    title: "Consent to application: zgoda na dostęp aplikacji"
+    what: >-
+      Użytkownik lub administrator zezwolił aplikacji OAuth na dostęp do danych (poczty, plików, kalendarza).
+    risk: >-
+      Atak consent phishing: złośliwa aplikacja dostaje trwały dostęp bez znajomości hasła i bez MFA. Zakres
+      offline_access oznacza dostęp także po wylogowaniu, a Mail.ReadWrite lub Files.ReadWrite.All to szeroki dostęp.
+    normal: >-
+      Pierwsze użycie znanej aplikacji firmowej lub od zweryfikowanego wydawcy.
+    check:
+      - "Nazwa aplikacji, wydawca i czy jest zweryfikowany?"
+      - "Jakie zakresy (Scope) i czy użytkownik rozumiał, na co się zgadza?"
+      - "Czy adres IP zgody jest zwykły dla użytkownika?"
+    source: https://learn.microsoft.com/en-us/purview/audit-log-activities
+
+  "set-mailbox":
+    title: "Set-Mailbox: zmiana ustawień skrzynki"
+    what: >-
+      Zmieniono ustawienia skrzynki, m.in. adres przekazywania poczty (ForwardingSmtpAddress,
+      ForwardingAddress, DeliverToMailboxAndForward).
+    risk: >-
+      Skuteczna metoda wyprowadzania poczty: wszystkie wiadomości są kopiowane na adres zewnętrzny, często bez
+      widocznego śladu dla użytkownika (T1114.003). Ważne w atakach BEC.
+    normal: >-
+      Administrator zmieniający limity lub aliasy zgodnie z ticketem.
+    check:
+      - "Które parametry zmieniono i czy pojawił się adres zewnętrzny?"
+      - "Kto to zrobił i czy była zaplanowana zmiana?"
+    source: https://learn.microsoft.com/en-us/purview/audit-log-activities
+
+  "add-mailboxpermission":
+    title: "Add-MailboxPermission: nadano dostęp do skrzynki"
+    what: >-
+      Komuś nadano uprawnienia do cudzej skrzynki (np. FullAccess).
+    risk: >-
+      Atakujący daje własnemu kontu dostęp do skrzynki ofiary lub osoby decyzyjnej, co umożliwia czytanie poczty
+      bez hasła.
+    normal: >-
+      Delegowanie skrzynki asystentowi lub skrzynki współdzielonej, zgodnie z ticketem.
+    check:
+      - "Kto dostał dostęp, do jakiej skrzynki i z jakim uprawnieniem?"
+      - "Czy była to zaplanowana zmiana?"
+    source: https://learn.microsoft.com/en-us/purview/audit-log-activities
+
+  "new-transportrule":
+    title: "New-TransportRule: utworzono regułę przepływu poczty"
+    what: >-
+      Administrator lub konto z odpowiednimi uprawnieniami utworzyło regułę przetwarzającą pocztę dla całej
+      organizacji.
+    risk: >-
+      Atakujący z uprawnieniami administratora może ukrywać wiadomości albo kopiować całą pocztę organizacji.
+    normal: >-
+      Reguły zaplanowane przez zespół poczty (stopki, ochrona przed wyciekiem danych).
+    check:
+      - "Co robi reguła (przekierowanie, kopiowanie, usuwanie) i kogo dotyczy?"
+      - "Kto ją utworzył i czy to zaplanowana zmiana?"
+    source: https://learn.microsoft.com/en-us/purview/audit-log-activities
+
+  "add member to role":
+    title: "Add member to role: nadano rolę administracyjną"
+    what: >-
+      Użytkownikowi lub aplikacji nadano rolę w katalogu (np. Global Administrator).
+    risk: >-
+      Eskalacja uprawnień w chmurze: atakujący z przejętym kontem administratora nadaje role swoim kontom, aby
+      zachować kontrolę.
+    normal: >-
+      Zaplanowane przyznanie roli przez zespół IT.
+    check:
+      - "Jaka rola, komu i kto nadał?"
+      - "Czy była to zaplanowana zmiana (ticket)?"
+    source: https://learn.microsoft.com/en-us/purview/audit-log-activities
+
+  "add service principal credentials":
+    title: "Add service principal credentials: dodano poświadczenia aplikacji"
+    what: >-
+      Do aplikacji (service principal) dodano nowy sekret lub certyfikat.
+    risk: >-
+      Atakujący dodaje własny sekret do istniejącej aplikacji, aby zachować dostęp jako aplikacja, niezależnie od
+      haseł użytkowników i MFA.
+    normal: >-
+      Zaplanowana rotacja sekretów przez właściciela aplikacji.
+    check:
+      - "Do jakiej aplikacji i przez kogo dodano poświadczenia?"
+      - "Czy to zaplanowana rotacja?"
+    source: https://learn.microsoft.com/en-us/purview/audit-log-activities
+
+  "mailitemsaccessed":
+    title: "MailItemsAccessed: odczytano wiadomości"
+    what: >-
+      Zapis, że ktoś lub coś odczytało wiadomości ze skrzynki (wymaga licencji z zaawansowanym audytem).
+    risk: >-
+      Pozwala ocenić, co atakujący faktycznie przeczytał po przejęciu konta, czyli skalę wycieku.
+    normal: >-
+      Bardzo dużo zdarzeń przy zwykłej pracy z pocztą.
+    check:
+      - "Skąd odczyt (adres, aplikacja) i czy odbiega od zwykłej pracy użytkownika?"
+    source: https://learn.microsoft.com/en-us/purview/audit-log-activities
+
+  "userloggedin":
+    title: "UserLoggedIn: logowanie do usług M365"
+    what: >-
+      Użytkownik zalogował się do usługi Microsoft 365.
+    risk: >-
+      Sprawdzaj adres i aplikację, bo to dowód logowania, ale bez szczegółów jak w dzienniku Entra.
+    normal: >-
+      Setki dziennie w zwykłej pracy.
+    check:
+      - "Czy adres i aplikacja pasują do zwykłego wzorca użytkownika?"
+    source: https://learn.microsoft.com/en-us/purview/audit-log-activities
+    quiet: true
+
+  "filedownloaded":
+    title: "FileDownloaded: pobrano plik z SharePoint/OneDrive"
+    what: >-
+      Użytkownik pobrał plik z SharePoint lub OneDrive.
+    risk: >-
+      Masowe pobieranie po przejęciu konta to wyprowadzanie danych. Pojedyncze pobrania są normalne.
+    normal: >-
+      Pojedyncze pobrania w ramach pracy.
+    check:
+      - "Ile plików w krótkim czasie i z jakiego adresu?"
+      - "Czy to dane wrażliwe i czy użytkownik zwykle je pobiera?"
+    source: https://learn.microsoft.com/en-us/purview/audit-log-activities
+
+processes:
+  "powershell.exe":
+    title: "powershell.exe: Windows PowerShell"
+    what: >-
+      Wbudowana powłoka i język skryptowy Windows, używana do administracji.
+    risk: >-
+      Najczęściej nadużywane narzędzie po przejęciu hosta: uruchamianie zakodowanych poleceń (-enc),
+      pobieranie plików z sieci i wykonywanie ich w pamięci. Wykonanie bez okna (-w hidden) i -nop są typowe dla
+      ataków.
+    normal: >-
+      Skrypty administracyjne, logowania, aktualizacje; uruchamiane przez administratorów lub system zarządzania.
+    check:
+      - "Czy linia poleceń jest zakodowana (-enc) lub pobiera dane (DownloadString, iwr)?"
+      - "Kto jest rodzicem: Word, przeglądarka lub wscript to sygnał ostrzegawczy."
+    source: https://lolbas-project.github.io/lolbas/Binaries/Powershell/
+
+  "pwsh.exe":
+    title: "pwsh.exe: PowerShell 7+"
+    what: >-
+      Nowsza, wieloplatformowa wersja PowerShella (instalowana osobno).
+    risk: >-
+      Te same nadużycia jak przy powershell.exe, ale część reguł wykrywających szuka tylko starej nazwy.
+    normal: >-
+      Używany przez administratorów i programistów, jeśli firma go zainstalowała. Nietypowy, jeśli nie.
+    check:
+      - "Czy pwsh jest standardem w firmie i kto go uruchomił?"
+    source: https://learn.microsoft.com/en-us/powershell/scripting/install/installing-powershell-on-windows
+
+  "cmd.exe":
+    title: "cmd.exe: wiersz poleceń"
+    what: >-
+      Interpreter poleceń Windows.
+    risk: >-
+      Atakujący używa go do uruchamiania poleceń; podejrzany jest zwłaszcza po uruchomieniu przez Office lub
+      przeglądarkę.
+    normal: >-
+      Skrypty wsadowe, instalatory, administratorzy.
+    check:
+      - "Kto jest rodzicem i jaka linia poleceń?"
+    source: https://attack.mitre.org/techniques/T1059/003/
+
+  "wscript.exe":
+    title: "wscript.exe: Windows Script Host"
+    what: >-
+      Uruchamia skrypty .vbs i .js.
+    risk: >-
+      Częsty nośnik malware z załączników e-mail (pliki .js, .vbs) i pierwszy krok łańcucha infekcji.
+    normal: >-
+      Rzadko używany w nowoczesnych środowiskach; starsze skrypty logowania.
+    check:
+      - "Jaki skrypt i skąd (Downloads, załącznik, Temp)?"
+      - "Jaki proces go uruchomił?"
+    source: https://lolbas-project.github.io/lolbas/Binaries/Wscript/
+
+  "cscript.exe":
+    title: "cscript.exe: Windows Script Host (konsola)"
+    what: >-
+      Wersja wscript uruchamiana w konsoli, wykonuje .vbs i .js.
+    risk: >-
+      Jak wscript.exe: częste w łańcuchach malware.
+    normal: >-
+      Starsze skrypty administracyjne.
+    check:
+      - "Jaki skrypt i skąd?"
+    source: https://lolbas-project.github.io/lolbas/Binaries/Cscript/
+
+  "mshta.exe":
+    title: "mshta.exe: HTML Application Host"
+    what: >-
+      Uruchamia aplikacje HTML (.hta) z lokalnych plików lub adresów URL.
+    risk: >-
+      Atakujący używa go do wykonania kodu pobranego z sieci (T1218.005), omijając część zabezpieczeń.
+    normal: >-
+      Bardzo rzadki w nowoczesnych środowiskach.
+    check:
+      - "Czy linia poleceń zawiera adres URL lub plik .hta z Temp?"
+    source: https://lolbas-project.github.io/lolbas/Binaries/Mshta/
+
+  "rundll32.exe":
+    title: "rundll32.exe: uruchamianie funkcji z bibliotek DLL"
+    what: >-
+      Wywołuje funkcję wyeksportowaną z biblioteki DLL. System i aplikacje używają go bardzo często.
+    risk: >-
+      Atakujący uruchamia swoje DLL lub nadużywa funkcji systemowych, np. comsvcs.dll MiniDump do zrzutu pamięci
+      lsass.
+    normal: >-
+      Panel sterowania, drukowanie, ustawienia systemu, ze znanymi bibliotekami z System32.
+    check:
+      - "Jaka biblioteka i jaka funkcja? DLL z Temp lub AppData to ostrzeżenie."
+      - "Czy argumenty zawierają comsvcs.dll, MiniDump lub lsass?"
+    source: https://lolbas-project.github.io/lolbas/Binaries/Rundll32/
+
+  "regsvr32.exe":
+    title: "regsvr32.exe: rejestracja bibliotek DLL"
+    what: >-
+      Rejestruje biblioteki COM/DLL w systemie.
+    risk: >-
+      Nadużywany do wykonania skryptu lub DLL pobranych z sieci (technika Squiblydoo, przełącznik /i:http...).
+    normal: >-
+      Instalatory oprogramowania rejestrujące własne biblioteki.
+    check:
+      - "Czy linia poleceń zawiera /i:, scrobj.dll lub adres URL?"
+    source: https://lolbas-project.github.io/lolbas/Binaries/Regsvr32/
+
+  "certutil.exe":
+    title: "certutil.exe: narzędzie do certyfikatów"
+    what: >-
+      Wbudowane narzędzie do zarządzania certyfikatami. Potrafi też pobierać pliki z sieci i kodować lub
+      dekodować base64.
+    risk: >-
+      Atakujący używa go do pobierania narzędzi (-urlcache, -split) i dekodowania ładunków (-decode), bo to
+      podpisany plik Microsoft (T1105, T1140).
+    normal: >-
+      Administratorzy zarządzający certyfikatami lub sprawdzający sumy plików (-hashfile).
+    check:
+      - "Czy argumenty zawierają -urlcache, -decode lub adres URL?"
+      - "Co zrobiono z pobranym plikiem zaraz potem?"
+    source: https://lolbas-project.github.io/lolbas/Binaries/Certutil/
+
+  "bitsadmin.exe":
+    title: "bitsadmin.exe: Background Intelligent Transfer Service"
+    what: >-
+      Narzędzie do zarządzania transferami plików w tle (usługa BITS).
+    risk: >-
+      Atakujący pobiera przez nie pliki (/transfer) lub zakłada trwałe zadania BITS (T1197).
+    normal: >-
+      Rzadko używane ręcznie; aktualizacje Windows używają BITS przez API.
+    check:
+      - "Czy linia poleceń zawiera /transfer i adres URL?"
+    source: https://lolbas-project.github.io/lolbas/Binaries/Bitsadmin/
+
+  "wmic.exe":
+    title: "wmic.exe: WMI w wierszu poleceń"
+    what: >-
+      Narzędzie do zapytań i operacji przez WMI (usuwane w nowszych wersjach Windows).
+    risk: >-
+      Atakujący używa do rozpoznania systemu, uruchamiania procesów na zdalnych maszynach (ruch boczny) i
+      trwałości przez subskrypcje WMI.
+    normal: >-
+      Starsze skrypty inwentaryzacyjne i administracyjne.
+    check:
+      - "Czy polecenie ma /node: (zdalny host) lub process call create?"
+    source: https://lolbas-project.github.io/lolbas/Binaries/Wmic/
+
+  "schtasks.exe":
+    title: "schtasks.exe: Harmonogram zadań"
+    what: >-
+      Tworzy i zarządza zadaniami zaplanowanymi.
+    risk: >-
+      Atakujący zakłada zadania dla trwałej obecności lub wykonania kodu o zadanej porze, także na zdalnych
+      maszynach.
+    normal: >-
+      Administratorzy i instalatory oprogramowania.
+    check:
+      - "Co uruchamia zadanie i z jakiego miejsca? Użyto /create lub /s (zdalny host)?"
+    source: https://lolbas-project.github.io/lolbas/Binaries/Schtasks/
+
+  "vssadmin.exe":
+    title: "vssadmin.exe: kopie woluminów w tle (VSS)"
+    what: >-
+      Zarządza kopiami zapasowymi woluminów (shadow copies).
+    risk: >-
+      Polecenie delete shadows kasuje kopie zapasowe, typowy krok ransomware tuż przed szyfrowaniem (T1490).
+      Wymaga natychmiastowej reakcji.
+    normal: >-
+      Rzadko używane ręcznie przez administratorów; narzędzia kopii zapasowych robią to przez API.
+    check:
+      - "Czy argumenty zawierają delete shadows lub resize shadowstorage?"
+      - "Czy na hoście widać inne oznaki ransomware (masowe zmiany plików)?"
+    source: https://attack.mitre.org/techniques/T1490/
+
+  "whoami.exe":
+    title: "whoami.exe: kto jestem"
+    what: >-
+      Pokazuje bieżącego użytkownika, jego grupy i uprawnienia.
+    risk: >-
+      Atakujący po przejęciu hosta sprawdza, kim jest i jakie ma uprawnienia (T1033). Opcje /priv i /all dają
+      szerszy obraz.
+    normal: >-
+      Administratorzy i skrypty diagnostyczne.
+    check:
+      - "Czy po whoami następują inne polecenia rozpoznania (net, nltest, ipconfig)?"
+    source: https://attack.mitre.org/techniques/T1033/
+
+  "net.exe":
+    title: "net.exe: zarządzanie siecią i kontami"
+    what: >-
+      Narzędzie do użytkowników, grup, udziałów i usług (np. net user, net group, net use).
+    risk: >-
+      Rozpoznanie środowiska (net group 'Domain Admins') i zakładanie kont (net user /add), dodawanie do grup
+      administratorów.
+    normal: >-
+      Mapowanie dysków sieciowych (net use) i skrypty logowania.
+    check:
+      - "Jakie podpolecenie: user /add, localgroup administrators /add wymagają natychmiastowej uwagi."
+    source: https://attack.mitre.org/software/S0039/
+
+  "reg.exe":
+    title: "reg.exe: rejestr z wiersza poleceń"
+    what: >-
+      Odczytuje, dodaje i eksportuje wpisy rejestru.
+    risk: >-
+      Trwałość przez klucze Run (T1547.001), wyłączanie zabezpieczeń i eksport gałęzi SAM/SYSTEM do kradzieży
+      haseł (reg save).
+    normal: >-
+      Skrypty administracyjne i instalatory.
+    check:
+      - "Jaki klucz i operacja? reg save na HKLM\\SAM lub SYSTEM to ostrzeżenie."
+    source: https://lolbas-project.github.io/lolbas/Binaries/Reg/
+
+  "procdump.exe":
+    title: "procdump.exe: zrzut pamięci procesu (Sysinternals)"
+    what: >-
+      Narzędzie Microsoft Sysinternals do zrzutów pamięci procesów, używane do diagnostyki.
+    risk: >-
+      Atakujący zrzuca nim pamięć lsass.exe i wydobywa hasła offline (T1003.001). Podpisany przez Microsoft, więc
+      przechodzi proste filtry.
+    normal: >-
+      Programiści i administratorzy diagnozujący awarie aplikacji, rzadko na stacjach użytkowników.
+    check:
+      - "Czy celem jest lsass lub inny proces z poświadczeniami?"
+      - "Kto go uruchomił i skąd pochodzi plik?"
+    source: https://learn.microsoft.com/en-us/sysinternals/downloads/procdump
+
+  "procdump64.exe":
+    title: "procdump64.exe: zrzut pamięci procesu (64-bit)"
+    what: >-
+      64-bitowa wersja procdump z pakietu Sysinternals.
+    risk: >-
+      Jak procdump.exe: nadużywany do zrzutu pamięci lsass.exe (T1003.001).
+    normal: >-
+      Diagnostyka awarii aplikacji.
+    check:
+      - "Czy celem jest lsass i kto go uruchomił?"
+    source: https://learn.microsoft.com/en-us/sysinternals/downloads/procdump
+
+  "psexec.exe":
+    title: "psexec.exe: zdalne uruchamianie procesów (Sysinternals)"
+    what: >-
+      Narzędzie Sysinternals do uruchamiania procesów na zdalnych maszynach. Tworzy tam usługę PSEXESVC.
+    risk: >-
+      Ulubione narzędzie ruchu bocznego i ransomware: uruchamia kod z uprawnieniami SYSTEM na wielu hostach.
+    normal: >-
+      Administratorzy, zwykle z konkretnych stacji zarządzających.
+    check:
+      - "Skąd i na jaki host? Czy konto i stacja źródłowa są administracyjne?"
+      - "Czy ten sam wzorzec dotyczy wielu hostów naraz?"
+    source: https://attack.mitre.org/software/S0029/
+
+  "mimikatz.exe":
+    title: "mimikatz.exe: narzędzie do kradzieży poświadczeń"
+    what: >-
+      Znane narzędzie ofensywne do wydobywania haseł, skrótów i biletów Kerberos z pamięci Windows.
+    risk: >-
+      Obecność oznacza zwykle trwający włam. Atakujący może zdobyć hasła administratorów i przejąć całą domenę.
+      Często zmienia nazwę pliku, więc brak tej nazwy nie wyklucza użycia.
+    normal: >-
+      Poza testami penetracyjnymi nie ma uzasadnionego użycia na produkcji.
+    check:
+      - "Czy to autoryzowany test penetracyjny? Jeśli nie, eskalacja natychmiast."
+      - "Które konta były zalogowane na hoście (ich hasła mogły wyciec)?"
+    source: https://attack.mitre.org/software/S0002/
+
+  "lsass.exe":
+    title: "lsass.exe: usługa uwierzytelniania lokalnego"
+    what: >-
+      Proces systemowy Windows, który weryfikuje logowania i przechowuje w pamięci poświadczenia zalogowanych
+      kont. Normalnie uruchomiony z C:\Windows\System32\lsass.exe, tylko jedna instancja.
+    risk: >-
+      Cel numer jeden kradzieży poświadczeń: jeśli inny proces czyta jego pamięć, atakujący może odzyskać hasła
+      i skróty (T1003.001). Skutek: przejęcie kont, także administratorów domeny.
+    normal: >-
+      Zwykle czytany tylko przez procesy systemowe i oprogramowanie antywirusowe.
+    check:
+      - "Kto otwiera lsass (Sysmon 10) i z jakimi uprawnieniami (GrantedAccess)?"
+      - "Czy plik lsass.exe jest w System32 i jest tylko jeden? Inna ścieżka lub nazwa jest ostrzeżeniem."
+    source: https://attack.mitre.org/techniques/T1003/001/
+
+  "comsvcs.dll":
+    title: "comsvcs.dll: biblioteka COM+ (nadużywana do zrzutu pamięci)"
+    what: >-
+      Biblioteka systemowa Windows. Zawiera funkcję MiniDump, która potrafi zapisać zrzut pamięci procesu.
+    risk: >-
+      Wywołana przez rundll32 z argumentem lsass tworzy zrzut z poświadczeniami (T1003.001), bez pobierania
+      żadnego dodatkowego narzędzia. Typowa technika 'living off the land'.
+    normal: >-
+      Użycie MiniDump z linii poleceń nie jest typowe dla zwykłej pracy.
+    check:
+      - "Czy linia poleceń to rundll32 comsvcs.dll MiniDump z identyfikatorem procesu lsass?"
+    source: https://lolbas-project.github.io/lolbas/Libraries/Comsvcs/
+
+  "svchost.exe":
+    title: "svchost.exe: host usług Windows"
+    what: >-
+      Proces systemowy, który uruchamia wiele usług Windows. Zwykle jest ich dużo i uruchamiane są z parametrem
+      -k przez services.exe, z C:\Windows\System32.
+    risk: >-
+      Atakujący nazywa swój plik svchost.exe, aby wtopić się w tło. Podejrzany: inna ścieżka, brak -k, nietypowy
+      rodzic niż services.exe.
+    normal: >-
+      Wiele instancji, zawsze w System32, rodzicem jest services.exe.
+    check:
+      - "Czy ścieżka to System32 i rodzic services.exe?"
+    source: https://attack.mitre.org/techniques/T1036/005/
+
+  "winword.exe":
+    title: "winword.exe: Microsoft Word"
+    what: >-
+      Edytor tekstu Microsoft Word.
+    risk: >-
+      Word uruchamiający cmd, powershell, wscript lub mshta to klasyczny ślad złośliwego makra lub exploita w
+      dokumencie z załącznika (T1566.001).
+    normal: >-
+      Samo uruchomienie Worda jest zwykłe. Nie powinien uruchamiać powłok ani interpreterów skryptów.
+    check:
+      - "Jakie procesy potomne i skąd pochodzi otwarty dokument (załącznik, pobranie)?"
+    source: https://attack.mitre.org/techniques/T1566/001/
+
+  "excel.exe":
+    title: "excel.exe: Microsoft Excel"
+    what: >-
+      Arkusz kalkulacyjny Microsoft Excel.
+    risk: >-
+      Excel uruchamiający powłokę lub interpreter skryptów to ślad złośliwego makra w arkuszu z załącznika
+      (T1566.001).
+    normal: >-
+      Samo uruchomienie jest zwykłe; nie powinien uruchamiać powłok ani wscript.
+    check:
+      - "Jakie procesy potomne i skąd pochodzi arkusz?"
+    source: https://attack.mitre.org/techniques/T1566/001/
+
+  "msbuild.exe":
+    title: "msbuild.exe: Microsoft Build Engine"
+    what: >-
+      Kompiluje projekty .NET. Może też wykonywać kod C# osadzony w pliku projektu.
+    risk: >-
+      Atakujący uruchamia kod przez plik projektu bez kompilowania własnego programu, omijając kontrolę
+      aplikacji.
+    normal: >-
+      Programiści i serwery budujące. Rzadko na stacjach użytkowników.
+    check:
+      - "Jaki plik projektu i skąd? Czy host jest stacją programisty?"
+    source: https://lolbas-project.github.io/lolbas/Binaries/Msbuild/
+
+techniques:
+  "T1003":
+    title: "T1003: OS Credential Dumping"
+    what: >-
+      Pozyskiwanie haseł i skrótów z systemu operacyjnego: z pamięci, rejestru, bazy domeny.
+    risk: >-
+      Przejęcie kont, także administracyjnych, umożliwia ruch boczny i przejęcie domeny.
+    normal: >-
+      Brak uzasadnionego użycia poza testami penetracyjnymi i narzędziami bezpieczeństwa.
+    check:
+      - "Jaka konkretna odmiana (T1003.001 lsass, T1003.002 SAM, T1003.003 NTDS)?"
+    source: https://attack.mitre.org/techniques/T1003/
+
+  "T1003.001":
+    title: "T1003.001: LSASS Memory"
+    what: >-
+      Odczyt pamięci procesu lsass.exe w celu zdobycia haseł i skrótów.
+    risk: >-
+      Hasła i skróty zalogowanych kont (w tym administratorów) trafiają do atakującego, co umożliwia ruch boczny.
+    normal: >-
+      Antywirus i narzędzia systemowe czytają lsass w znany sposób; reguła ma allowlistę.
+    check:
+      - "Który proces otworzył lsass i z jakimi uprawnieniami?"
+      - "Jakie konta były zalogowane na hoście?"
+    source: https://attack.mitre.org/techniques/T1003/001/
+
+  "T1027":
+    title: "T1027: Obfuscated Files or Information"
+    what: >-
+      Ukrywanie treści poleceń lub plików (kodowanie base64, szyfrowanie), by utrudnić wykrycie.
+    risk: >-
+      Zakodowane polecenie często ukrywa pobieranie lub uruchamianie złośliwego kodu.
+    normal: >-
+      Niektóre legalne skrypty używają kodowania, ale rzadko na stacjach użytkowników.
+    check:
+      - "Zdekoduj ładunek (base64) i sprawdź, co faktycznie robi."
+    source: https://attack.mitre.org/techniques/T1027/
+
+  "T1033":
+    title: "T1033: System Owner/User Discovery"
+    what: >-
+      Sprawdzanie, kto jest zalogowany i jakie ma uprawnienia (np. whoami).
+    risk: >-
+      Zwykle pierwszy krok rozpoznania po przejęciu hosta. Samo w sobie niegroźne, groźne w sekwencji.
+    normal: >-
+      Administratorzy i skrypty diagnostyczne.
+    check:
+      - "Czy po tym następują kolejne polecenia rozpoznania?"
+    source: https://attack.mitre.org/techniques/T1033/
+
+  "T1059":
+    title: "T1059: Command and Scripting Interpreter"
+    what: >-
+      Wykonywanie poleceń przez powłoki i interpretery skryptów (PowerShell, cmd, wscript, Python).
+    risk: >-
+      Podstawowy sposób uruchamiania kodu przez atakującego po wejściu do systemu.
+    normal: >-
+      Administracja i automatyzacja w każdym środowisku, więc liczy się kontekst.
+    check:
+      - "Kto uruchomił, z jaką linią poleceń i jaki proces nadrzędny?"
+    source: https://attack.mitre.org/techniques/T1059/
+
+  "T1059.001":
+    title: "T1059.001: PowerShell"
+    what: >-
+      Nadużycie PowerShella do wykonania poleceń lub skryptów.
+    risk: >-
+      Pozwala pobierać i wykonywać kod w pamięci, często zakodowany.
+    normal: >-
+      Skrypty administracyjne uruchamiane przez uprawnione konta.
+    check:
+      - "Czy polecenie jest zakodowane lub pobiera dane z sieci?"
+    source: https://attack.mitre.org/techniques/T1059/001/
+
+  "T1078":
+    title: "T1078: Valid Accounts"
+    what: >-
+      Użycie prawdziwych, przejętych poświadczeń zamiast wykorzystania luki.
+    risk: >-
+      Atakujący wygląda jak użytkownik, więc trudniej go odróżnić. Dostęp jest w pełnym zakresie konta.
+    normal: >-
+      Zwykłe logowania legalnych użytkowników; liczy się nietypowy kontekst.
+    check:
+      - "Czy adres, kraj, urządzenie lub godzina odbiegają od zwykłego wzorca konta?"
+    source: https://attack.mitre.org/techniques/T1078/
+
+  "T1105":
+    title: "T1105: Ingress Tool Transfer"
+    what: >-
+      Pobieranie narzędzi lub plików atakującego do systemu ofiary.
+    risk: >-
+      Atakujący sprowadza własne narzędzia, które potem uruchamia.
+    normal: >-
+      Aktualizacje i pobieranie oprogramowania, ale nie przez certutil lub bitsadmin.
+    check:
+      - "Skąd pobrano plik i co zrobiono z nim potem?"
+    source: https://attack.mitre.org/techniques/T1105/
+
+  "T1110":
+    title: "T1110: Brute Force"
+    what: >-
+      Zgadywanie haseł przez wielokrotne próby.
+    risk: >-
+      Trafione hasło daje dostęp do konta. Z MFA kolejny krok to jego obejście.
+    normal: >-
+      Pojedyncze pomyłki użytkowników.
+    check:
+      - "Czy po serii błędów jest sukces z tego samego adresu?"
+    source: https://attack.mitre.org/techniques/T1110/
+
+  "T1110.003":
+    title: "T1110.003: Password Spraying"
+    what: >-
+      Jedno lub kilka popularnych haseł wypróbowywanych na wielu kontach, żeby uniknąć blokady.
+    risk: >-
+      Jedno słabe hasło wystarczy, by zdobyć dostęp do konta w organizacji.
+    normal: >-
+      Rzadko: próby na wielu kontach z jednego adresu zwykle nie są pomyłką.
+    check:
+      - "Czy wiele kont było atakowanych z jednego adresu w krótkim czasie?"
+    source: https://attack.mitre.org/techniques/T1110/003/
+
+  "T1114.003":
+    title: "T1114.003: Email Forwarding Rule"
+    what: >-
+      Reguła przekazująca pocztę z przejętej skrzynki na adres atakującego.
+    risk: >-
+      Atakujący czyta pocztę bez logowania się, często przez długi czas; ważne w oszustwach BEC.
+    normal: >-
+      Rzadko uzasadnione przekazywanie na adresy zewnętrzne.
+    check:
+      - "Czy adres docelowy jest zewnętrzny i znany?"
+    source: https://attack.mitre.org/techniques/T1114/003/
+
+  "T1140":
+    title: "T1140: Deobfuscate/Decode Files or Information"
+    what: >-
+      Dekodowanie ukrytych wcześniej plików lub poleceń przed użyciem (np. certutil -decode).
+    risk: >-
+      Atakujący dostarcza zakodowany ładunek, który omija filtry, a potem go odtwarza.
+    normal: >-
+      Rzadko w zwykłej pracy.
+    check:
+      - "Co zdekodowano i co z tym zrobiono?"
+    source: https://attack.mitre.org/techniques/T1140/
+
+  "T1197":
+    title: "T1197: BITS Jobs"
+    what: >-
+      Nadużycie usługi BITS do pobierania lub utrzymania obecności.
+    risk: >-
+      BITS jest zaufany i często przepuszczany przez zaporę, więc ruch trudniej wychwycić.
+    normal: >-
+      Aktualizacje Windows używają BITS przez API.
+    check:
+      - "Czy zadania BITS wskazują na nietypowe adresy URL?"
+    source: https://attack.mitre.org/techniques/T1197/
+
+  "T1218.005":
+    title: "T1218.005: Mshta"
+    what: >-
+      Nadużycie mshta.exe do wykonania kodu z pliku HTA lub adresu URL.
+    risk: >-
+      Kod z sieci uruchamia się przez podpisany plik Microsoft, omijając część zabezpieczeń.
+    normal: >-
+      Bardzo rzadkie w nowoczesnych środowiskach.
+    check:
+      - "Czy mshta ma adres URL lub plik HTA z Temp?"
+    source: https://attack.mitre.org/techniques/T1218/005/
+
+  "T1490":
+    title: "T1490: Inhibit System Recovery"
+    what: >-
+      Kasowanie kopii zapasowych i punktów przywracania (np. vssadmin delete shadows).
+    risk: >-
+      Typowy krok tuż przed szyfrowaniem ransomware, aby uniemożliwić odzyskanie plików.
+    normal: >-
+      Praktycznie brak, poza planowaną pracą administratora.
+    check:
+      - "Czy są oznaki masowego szyfrowania plików? Izoluj host natychmiast."
+    source: https://attack.mitre.org/techniques/T1490/
+
+  "T1528":
+    title: "T1528: Steal Application Access Token"
+    what: >-
+      Zdobycie tokenów dostępu aplikacji, np. przez złośliwą zgodę OAuth.
+    risk: >-
+      Atakujący ma trwały dostęp do danych bez hasła i często bez MFA.
+    normal: >-
+      Zgody na znane aplikacje firmowe.
+    check:
+      - "Jaka aplikacja, wydawca i jakie uprawnienia?"
+    source: https://attack.mitre.org/techniques/T1528/
+
+  "T1621":
+    title: "T1621: Multi-Factor Authentication Request Generation"
+    what: >-
+      Wywoływanie powiadomień MFA w nadziei, że użytkownik w końcu je zatwierdzi (MFA fatigue, push bombing).
+    risk: >-
+      Atakujący zna już hasło. Jedno zatwierdzone powiadomienie daje mu pełny dostęp mimo włączonego MFA.
+    normal: >-
+      Pojedyncze, oczekiwane prompty po własnym logowaniu użytkownika.
+    check:
+      - "Czy użytkownik wie o promptach i czy któryś zatwierdził?"
+      - "Reset hasła i odwołanie sesji, jeśli nie rozpoznaje promptów."
+    source: https://attack.mitre.org/techniques/T1621/
+
+  "T1564.008":
+    title: "T1564.008: Email Hiding Rules"
+    what: >-
+      Reguły skrzynki ukrywające wiadomości (przenoszenie do folderów ukrytych, usuwanie).
+    risk: >-
+      Ofiara nie widzi odpowiedzi na wiadomości wysłane przez atakującego ani alertów bezpieczeństwa.
+    normal: >-
+      Reguły porządkujące pocztę nie usuwają wiadomości o fakturach ani bezpieczeństwie.
+    check:
+      - "Czy reguła przenosi lub usuwa wiadomości o płatnościach, hasłach, bezpieczeństwie?"
+    source: https://attack.mitre.org/techniques/T1564/008/
+
+  "T1566":
+    title: "T1566: Phishing"
+    what: >-
+      Wiadomości nakłaniające do ujawnienia haseł lub uruchomienia złośliwego kodu.
+    risk: >-
+      Najczęstszy początek włamania: kliknięcie linku lub załącznika prowadzi do kradzieży hasła lub infekcji.
+    normal: >-
+      Zwykła poczta bez fałszywego nadawcy, podejrzanych linków i załączników.
+    check:
+      - "Czy ktoś kliknął lub otworzył załącznik i czy wkrótce było nietypowe logowanie?"
+    source: https://attack.mitre.org/techniques/T1566/
+
+  "T1566.001":
+    title: "T1566.001: Spearphishing Attachment"
+    what: >-
+      Phishing z załącznikiem (dokument z makrem, plik html, skrót .lnk).
+    risk: >-
+      Otwarcie załącznika może uruchomić kod lub wyłudzić hasło na fałszywej stronie.
+    normal: >-
+      Załączniki od znanych nadawców, bez makr i rozszerzeń wykonywalnych.
+    check:
+      - "Czy załącznik jest wykonywalny lub html/lnk i czy adresat go otworzył?"
+    source: https://attack.mitre.org/techniques/T1566/001/
+
+  "T1566.002":
+    title: "T1566.002: Spearphishing Link"
+    what: >-
+      Phishing z linkiem do fałszywej strony logowania lub pobrania.
+    risk: >-
+      Kliknięcie prowadzi do kradzieży hasła lub pobrania złośliwego pliku.
+    normal: >-
+      Linki zgodne z widocznym tekstem, do znanych domen.
+    check:
+      - "Czy tekst linku różni się od adresu docelowego i czy ktoś kliknął?"
+    source: https://attack.mitre.org/techniques/T1566/002/
+
+rules:
+  failures_then_success:
+    title: "Reguła failures_then_success: zgadywanie hasła zakończone sukcesem"
+    what: >-
+      Wiele nieudanych logowań na jedno konto z jednego adresu w krótkim czasie, po których nastąpiło udane
+      logowanie. Reguła widzi tylko jedno konto naraz, więc nie wykrywa password sprayingu na wielu kontach.
+    risk: >-
+      Prawdopodobne przejęcie konta: atakujący trafił w hasło. Dalsze kroki to często przeglądanie poczty,
+      zakładanie reguł i wyłudzenia.
+    normal: >-
+      Użytkownik, który kilka razy pomylił hasło i w końcu wpisał dobrze, zwykle ze znanego adresu.
+    check:
+      - "Czy adres jest znany użytkownikowi (biuro, VPN) czy obcy (sprawdź reputację)?"
+      - "Co zrobiło konto po sukcesie: reguły skrzynki, zgody OAuth, nowe urządzenia?"
+      - "Reset hasła i odwołanie sesji, jeśli użytkownik nie rozpoznaje logowania."
+    source: https://attack.mitre.org/techniques/T1110/
+
+  mfa_fatigue:
+    title: "Reguła mfa_fatigue: zalewanie powiadomieniami MFA"
+    what: >-
+      Wiele odrzuconych lub nieodebranych promptów MFA w krótkim czasie, po których logowanie zakończyło się
+      sukcesem.
+    risk: >-
+      Atakujący zna hasło i męczy użytkownika powiadomieniami, aż ten kliknie 'Zatwierdź'. Sukces na końcu serii
+      oznacza, że konto jest prawdopodobnie przejęte mimo MFA.
+    normal: >-
+      Użytkownik zagubiony w telefonie, który kilka razy nie odpowiedział lub pomylił kod.
+    check:
+      - "Czy użytkownik wie o tych promptach i czy zatwierdził jeden z nich?"
+      - "Z jakiego adresu pochodziło logowanie po serii?"
+      - "Reset hasła, odwołanie sesji i weryfikacja metod MFA konta."
+    source: https://attack.mitre.org/techniques/T1621/
+
+  impossible_travel:
+    title: "Reguła impossible_travel: niemożliwa podróż"
+    what: >-
+      Dwa udane logowania tego samego konta z miejsc tak odległych, że fizycznie nie dało się przemieścić z
+      zadeklarowaną prędkością.
+    risk: >-
+      Jedno z logowań mogło pochodzić od atakującego. Sama lokalizacja bywa myląca (VPN, telefony komórkowe).
+    normal: >-
+      Połączenie przez VPN, usługi chmurowe używające adresów z innego kraju, telefon w sieci operatora.
+    check:
+      - "Czy jeden z adresów to VPN lub usługa chmurowa znana firmie?"
+      - "Czy urządzenie i aplikacja w obu logowaniach są takie same?"
+      - "Czy po drugim logowaniu pojawiły się nietypowe działania na koncie?"
+    source: https://attack.mitre.org/techniques/T1078/
+
+  off_hours_login:
+    title: "Reguła off_hours_login: logowanie poza godzinami pracy"
+    what: >-
+      Udane logowania poza ustawionymi godzinami pracy (domyślnie 6:00-20:00, strefa Europe/Warsaw) lub w weekend.
+    risk: >-
+      Słaby sygnał sam w sobie. Zyskuje wagę, gdy towarzyszą mu inne wykrycia.
+    normal: >-
+      Praca zdalna, dyżury, strefy czasowe, praca wieczorem.
+    check:
+      - "Czy użytkownik pracuje w nietypowych godzinach lub ma dyżur?"
+      - "Czy to samo konto ma inne wykrycia w tym samym oknie?"
+    source: https://attack.mitre.org/techniques/T1078/
+
+  suspicious_inbox_rule:
+    title: "Reguła suspicious_inbox_rule: podejrzana reguła skrzynki"
+    what: >-
+      Reguła skrzynki, która przekazuje pocztę na zewnątrz, usuwa wiadomości, przenosi je do mało widocznych
+      folderów lub działa na słowach kluczowych (faktura, hasło, bezpieczeństwo).
+    risk: >-
+      Typowy ślad przejętej skrzynki: atakujący chce czytać pocztę i ukrywać swoje działania, często przy
+      oszustwach BEC (zmiana numeru konta na fakturze).
+    normal: >-
+      Użytkownik porządkujący newslettery do folderu. Zwykle bez usuwania i bez adresów zewnętrznych.
+    check:
+      - "Czy reguła przekazuje na adres zewnętrzny lub usuwa wiadomości?"
+      - "Czy została założona z tego samego adresu co podejrzane logowanie?"
+      - "Usuń regułę i sprawdź, ile poczty zdążyło wyjść."
+    source: https://attack.mitre.org/techniques/T1114/003/
+
+  oauth_consent:
+    title: "Reguła oauth_consent: zgoda na aplikację OAuth"
+    what: >-
+      Udzielono zgody aplikacji na dostęp do danych konta. Wysoka ważność przy ryzykownych uprawnieniach (Mail.Read,
+      offline_access, Files.ReadWrite.All itp.).
+    risk: >-
+      Atak consent phishing: złośliwa aplikacja dostaje trwały dostęp do poczty lub plików, który przetrwa zmianę
+      hasła i działa bez MFA.
+    normal: >-
+      Pierwsze użycie znanej aplikacji firmowej lub zweryfikowanego dostawcy.
+    check:
+      - "Nazwa aplikacji, wydawca i czy jest zweryfikowany?"
+      - "Jakie uprawnienia i czy użytkownik wiedział, co zatwierdza?"
+      - "Odwołaj zgodę, jeśli aplikacja jest nieznana."
+    source: https://attack.mitre.org/techniques/T1528/
+
+  lotl_commandline:
+    title: "Reguła lotl_commandline: podejrzana linia poleceń (living off the land)"
+    what: >-
+      Uruchomienie wbudowanego narzędzia Windows w sposób typowy dla ataku: zakodowany PowerShell, certutil
+      pobierający pliki, bitsadmin, zrzut lsass, usuwanie kopii cieni, mshta ze zdalnym adresem.
+    risk: >-
+      Atakujący używa narzędzi już obecnych w systemie, więc antywirus ich nie blokuje. Wiele wzorców oznacza
+      etap po przejęciu hosta: pobieranie narzędzi, rozpoznanie, kradzież haseł, przygotowanie do ransomware.
+    normal: >-
+      Administratorzy używają części tych narzędzi (certutil -hashfile, whoami /groups). Reguła może dać fałszywe
+      alarmy w środowiskach administracyjnych.
+    check:
+      - "Kto uruchomił, z jakiego procesu nadrzędnego i na jakim hoście?"
+      - "Zdekoduj argumenty (base64) i sprawdź, co faktycznie robią."
+      - "Czy w pobliżu czasu są inne wykrycia na tym hoście?"
+    source: https://attack.mitre.org/techniques/T1059/
+
+  lsass_access:
+    title: "Reguła lsass_access: odczyt pamięci lsass.exe"
+    what: >-
+      Proces otworzył lsass.exe z prawem odczytu pamięci (bit 0x10) i nie jest na liście znanych, bezpiecznych
+      źródeł. Wymaga Sysmon z włączonym zdarzeniem 10 dla lsass.
+    risk: >-
+      Ślad zrzutu poświadczeń (Mimikatz, procdump, comsvcs.dll): atakujący zdobywa hasła i skróty zalogowanych
+      kont, a stąd może przejąć kolejne hosty.
+    normal: >-
+      Oprogramowanie antywirusowe i agenty monitorujące, których nie ma jeszcze na allowliście reguły.
+    check:
+      - "Który proces (SourceImage) i skąd pochodzi plik?"
+      - "Jakie konta były zalogowane na hoście (ich hasła mogły wyciec)?"
+      - "Czy po tym nastąpiły logowania z tych kont na innych hostach?"
+    source: https://attack.mitre.org/techniques/T1003/001/
+
+  suspicious_email:
+    title: "Reguła suspicious_email: podejrzana wiadomość e-mail"
+    what: >-
+      Wiadomość ma silny sygnał phishingu (błąd SPF/DKIM/DMARC, podszywanie się pod domenę, ryzykowny załącznik,
+      link do surowego adresu IP, tekst linku inny niż cel) albo kilka słabszych naraz.
+    risk: >-
+      Kliknięcie lub otwarcie załącznika może wyłudzić hasło lub uruchomić złośliwy kod. To najczęstszy początek
+      włamania do konta.
+    normal: >-
+      Newslettery i systemy zewnętrzne czasem mają niedopasowany Reply-To, dlatego słabe sygnały wymagają
+      trzech naraz.
+    check:
+      - "Czy adresat kliknął lub otworzył załącznik?"
+      - "Czy po tym było nietypowe logowanie (reguła phish_then_new_signin)?"
+      - "Zablokuj nadawcę i domenę, usuń wiadomość u pozostałych adresatów."
+    source: https://attack.mitre.org/techniques/T1566/
+
+  phish_then_new_signin:
+    title: "Reguła phish_then_new_signin: nowe logowanie po phishingu"
+    what: >-
+      Po podejrzanej wiadomości, w ciągu doby, konto zalogowało się z adresu IP, którego wcześniej nie używało.
+      Reguła milczy, jeśli nie ma wcześniejszej historii logowań (nie ma co nazwać 'nowym').
+    risk: >-
+      Silna wskazówka, że użytkownik oddał hasło na fałszywej stronie, a atakujący się zalogował: przejęcie konta
+      po phishingu.
+    normal: >-
+      Użytkownik, który po prostu zmienił sieć (dom, telefon, podróż) w tym samym czasie.
+    check:
+      - "Czy użytkownik kliknął link w tej wiadomości i wpisał hasło?"
+      - "Czy nowy adres jest znany (domowy, mobilny) czy obcy?"
+      - "Reset hasła, odwołanie sesji i sprawdzenie reguł skrzynki oraz zgód OAuth."
+    source: https://attack.mitre.org/techniques/T1566/

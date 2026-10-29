@@ -34,3 +34,7 @@ def load_rules_config(path: Path | None = None) -> dict[str, Any]:
 
 def load_redactor_config(path: Path | None = None) -> dict[str, Any]:
     return _load("redactor.yaml", path)
+
+
+def load_knowledge(path: Path | None = None) -> dict[str, Any]:
+    return _load("knowledge.yaml", path)

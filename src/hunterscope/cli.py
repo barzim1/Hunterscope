@@ -16,12 +16,14 @@ from rich.table import Table
 
 from hunterscope import coverage as cov
 from hunterscope import explain as exp
+from hunterscope import llm as llm_mod
 from hunterscope.casestore import STATUSES, CaseStore, default_db_path, iso
 from hunterscope.config.loader import load_knowledge, load_redactor_config, load_rules_config
 from hunterscope.handover import Handover, build_handover
 from hunterscope.handover import render_html as render_handover_html
 from hunterscope.handover import render_markdown as render_handover_md
 from hunterscope.ingest import load_events
+from hunterscope.llm import DEFAULT_MODEL
 from hunterscope.models import host_key, user_key
 from hunterscope.redactor import Redactor
 from hunterscope.report import render_html, render_json, render_markdown
@@ -31,6 +33,8 @@ app = typer.Typer(add_completion=False, no_args_is_help=True, help="HunterScope:
 case_app = typer.Typer(no_args_is_help=True, help="Work with saved cases (SQLite).")
 app.add_typer(case_app, name="case")
 err = Console(stderr=True)
+
+MAX_LLM_GAPS = 5  # `explain --llm` on a dossier asks about at most this many uncovered kinds of event
 
 DbOpt = Annotated[Path | None, typer.Option("--db", help="Case DB (default: $HUNTERSCOPE_DB or ~/.hunterscope/cases.db)")]
 AuthorOpt = Annotated[str | None, typer.Option("--author", help="Analyst name (default: $HUNTERSCOPE_ANALYST or OS user)")]
@@ -69,14 +73,22 @@ def _resolve_anchor(anchor: str) -> datetime | None:
     return _parse_timestamp(anchor, "--anchor")
 
 
-def _redactor(redactor_config: Path | None, key_env: str | None, users: list[str], hosts: list[str]) -> Redactor:
+def _redactor(redactor_config: Path | None, key_env: str | None, users: list[str], hosts: list[str],
+              overrides: dict[str, object] | None = None) -> Redactor:
     key = None
     if key_env:
         raw = os.environ.get(key_env)
         if not raw:
             raise typer.BadParameter(f"environment variable {key_env} is empty or unset")
         key = raw.encode()
-    return Redactor(load_redactor_config(redactor_config), key, users, hosts)
+    return Redactor({**load_redactor_config(redactor_config), **(overrides or {})}, key, users, hosts)
+
+
+def _llm_redactor(redactor_config: Path | None, key_env: str | None, users: list[str], hosts: list[str]) -> Redactor:
+    """Stricter than the offline default: the model gains nothing from public IPs or external addresses, and
+    the company's own egress IP is public too."""
+    return _redactor(redactor_config, key_env, users, hosts,
+                     overrides={"keep_public_ips": False, "keep_external_emails": False})
 
 
 @app.callback()
@@ -182,6 +194,10 @@ def explain_cmd(
         list[Path] | None,
         typer.Option("--input", "-i", exists=True, help="Instead of terms: explain what a dossier for --user/--host contains"),
     ] = None,
+    log: Annotated[
+        str | None,
+        typer.Option("--log", help="Instead of terms: a raw log line or text to explain ('-' = stdin)"),
+    ] = None,
     user: Annotated[str | None, typer.Option("--user", "-u", help="UPN, sAMAccountName or DOMAIN\\user")] = None,
     host: Annotated[str | None, typer.Option("--host", "-H", help="Hostname (FQDN suffix ignored)")] = None,
     timerange: Annotated[str, typer.Option("--timerange", "-t", help="e.g. 90m, 24h, 7d")] = "24h",
@@ -193,21 +209,54 @@ def explain_cmd(
     kb: Annotated[Path | None, typer.Option(help="Knowledge base overriding/extending the defaults")] = None,
     config: Annotated[Path | None, typer.Option(help="Rules config overriding defaults")] = None,
     redactor_config: Annotated[Path | None, typer.Option(help="Redactor config overriding defaults")] = None,
+    llm: Annotated[bool, typer.Option("--llm", help="Ask an LLM about what the knowledge base cannot cover. "
+                                                   "Text is pseudonymized first; see --dry-run")] = False,
+    model: Annotated[str, typer.Option(envvar="HUNTERSCOPE_LLM_MODEL", help="Model for --llm")] = DEFAULT_MODEL,
+    dry_run: Annotated[bool, typer.Option("--dry-run", help="With --llm: print exactly what would be sent, send nothing")] = False,
+    mask_user: Annotated[list[str] | None, typer.Option("--mask-user", help="Name to pseudonymize before sending (repeatable)")] = None,
+    mask_host: Annotated[list[str] | None, typer.Option("--mask-host", help="Short hostname to pseudonymize before sending (repeatable)")] = None,
+    allow_default_redaction: Annotated[bool, typer.Option("--allow-default-redaction", help="Send even though --redactor-config is "
+                                                          "not set (the default config only knows the fictional contoso.com)")] = False,
 ) -> None:
-    """Explain in plain language what an event, code, process or dossier means (offline knowledge base)."""
+    """Explain in plain language what an event, code, process, log line or dossier means."""
     if fmt not in {"md", "json"}:
         raise typer.BadParameter("--format must be md or json")
-    dossier_mode = bool(inputs)
-    if dossier_mode == bool(terms):
-        raise typer.BadParameter("give either terms to look up, or --input with --user/--host (not both)")
+    modes = [bool(terms), bool(inputs), log is not None]
+    if sum(modes) != 1:
+        raise typer.BadParameter("give exactly one of: terms to look up, --input with --user/--host, or --log")
+    dossier_mode, log_mode = bool(inputs), log is not None
     if dossier_mode and (user is None) == (host is None):
         raise typer.BadParameter("provide exactly one of --user / --host")
     if not dossier_mode and (user or host or redact):
         raise typer.BadParameter("--user/--host/--redact only apply together with --input")
+    if (dry_run or mask_user or mask_host or allow_default_redaction) and not llm:
+        raise typer.BadParameter("--dry-run/--mask-user/--mask-host/--allow-default-redaction only apply with --llm")
+    if llm and redactor_config is None and not allow_default_redaction:
+        raise typer.BadParameter(
+            "refusing to send text without a redactor config: the default only knows the fictional contoso.com, "
+            "so your real domain and usernames would pass through. Pass --redactor-config FILE (see "
+            "src/hunterscope/config/redactor.yaml), or --allow-default-redaction if you accept that, and check "
+            "what would be sent with --dry-run first.")
     try:
         base = exp.KnowledgeBase(load_knowledge(kb))
     except (OSError, ValueError, yaml.YAMLError) as exc:
         raise typer.BadParameter(f"cannot load knowledge base: {exc}") from exc
+
+    def ask_llm(texts: list[tuple[str, str]]) -> list[tuple[str, llm_mod.Prepared, llm_mod.LLMExplanation | None]]:
+        """Pseudonymize, build and (unless --dry-run) send each (label, text). Raises LLMError."""
+        redactor = _llm_redactor(redactor_config, key_env, mask_user or [], mask_host or [])
+        prepared = [(label, llm_mod.prepare(text, base, redactor)) for label, text in texts]
+        if dry_run:
+            return [(label, p, None) for label, p in prepared]
+        client = llm_mod.make_client(model)
+        out = []
+        for label, p in prepared:
+            err.print(f"[cyan]Sending {p.sent_chars} characters (pseudonymized) to {model}...[/cyan]")
+            out.append((label, p, llm_mod.explain_with_llm(p, client)))
+        return out
+
+    def dry_run_text(batch: list[tuple[str, llm_mod.Prepared, llm_mod.LLMExplanation | None]]) -> str:
+        return "\n".join(llm_mod.render_dry_run(model, p) for _, p, _ in batch)
 
     missing = False
     try:
@@ -226,17 +275,60 @@ def explain_cmd(
                 err.print(f"[red]{exc}[/red]")
                 raise typer.Exit(2) from exc
             explained = exp.explain_dossier(dossier, base)
-            text = json.dumps(exp.dossier_to_dict(explained), indent=2, ensure_ascii=False) if fmt == "json" \
-                else exp.render_dossier_markdown(explained)
+            batch = []
+            if llm and explained.gaps:  # only the kinds of event the base lacks, and only as ids, never raw events
+                batch = ask_llm([(f"{exp.TABLES[t]} {k}", f"{exp.TABLES[t]} {k}") for t, k, _ in explained.gaps[:MAX_LLM_GAPS]])
+            if dry_run:
+                text = dry_run_text(batch) if batch else "Brak rodzajów zdarzeń bez wpisu: nic do wysłania.\n"
+            elif fmt == "json":
+                data = exp.dossier_to_dict(explained)
+                data["llm"] = [{"term": label, **llm_mod.llm_to_dict(x)} for label, _, x in batch if x]
+                text = json.dumps(data, indent=2, ensure_ascii=False)
+            else:
+                text = exp.render_dossier_markdown(explained)
+                if batch:
+                    text += "\n## Wyjaśnienia modelu dla zdarzeń bez wpisu w bazie\n\n"
+                    for label, _, x in batch:
+                        text += f"### {label}\n\n" + llm_mod.render_llm_markdown(x, "####") + "\n"  # type: ignore[arg-type]
             if redact:
                 redactor = _redactor(redactor_config, key_env, [user_key(user)] if user else [],
                                      [host_key(host)] if host else [])
                 text = redactor.redact(text)
+        elif log_mode:
+            raw = sys.stdin.read() if log == "-" else Path(log or "").read_text(encoding="utf-8", errors="replace")
+            entries = exp.ground(raw, base)
+            batch = ask_llm([("log", raw)]) if llm else []
+            if dry_run:
+                text = dry_run_text(batch)
+            elif fmt == "json":
+                data = {"known": [x.to_dict() for x in entries]}
+                data["llm"] = llm_mod.llm_to_dict(batch[0][2]) if batch and batch[0][2] else None  # type: ignore[assignment]
+                text = json.dumps(data, indent=2, ensure_ascii=False)
+            else:
+                text = exp.render_log_markdown(entries)
+                if batch and batch[0][2]:
+                    text += "\n" + llm_mod.render_llm_markdown(batch[0][2])
         else:
             results = [(t, exp.lookup(t, base)) for t in terms or []]
-            missing = any(not found for _, found in results)
-            text = json.dumps(exp.lookup_to_dict(results), indent=2, ensure_ascii=False) if fmt == "json" \
-                else exp.render_lookup_markdown(results)
+            unknown = [t for t, found in results if not found]
+            missing = bool(unknown) and not llm
+            batch = ask_llm([(t, t) for t in unknown]) if llm and unknown else []
+            by_term = {label: x for label, _, x in batch if x}
+            if dry_run:
+                text = dry_run_text(batch) if batch else "Wszystkie terminy są w bazie: nic do wysłania.\n"
+            elif fmt == "json":
+                data = exp.lookup_to_dict(results)
+                for item in data:
+                    if item["term"] in by_term:
+                        item["llm"] = llm_mod.llm_to_dict(by_term[item["term"]])
+                text = json.dumps(data, indent=2, ensure_ascii=False)
+            else:
+                text = exp.render_lookup_markdown(results)
+                for term, x in by_term.items():
+                    text += f"\n## `{term}`: odpowiedź modelu\n\n" + llm_mod.render_llm_markdown(x, "###")
+    except llm_mod.LLMError as exc:
+        err.print(f"[red]{exc}[/red]")
+        raise typer.Exit(3) from exc
     except ValueError as exc:  # a knowledge base entry missing a required field
         err.print(f"[red]{exc}[/red]")
         raise typer.Exit(2) from exc

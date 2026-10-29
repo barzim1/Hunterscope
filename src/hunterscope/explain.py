@@ -238,6 +238,52 @@ def explain_dossier(dossier: Dossier, kb: KnowledgeBase) -> DossierExplanation:
     )
 
 
+# ------------------------------------------------------------------------------ grounding
+
+_TECHNIQUE_RE = re.compile(r"\bT\d{4}(?:\.\d{3})?\b")
+_ENTRA_RE = re.compile(r"(?i)(?:AADSTS|error\s*_?code[\"'\s]*[:=]?[\"'\s]*)(\d{1,7})")
+_EVENT_ID_RE = re.compile(r"(?i)event\s*_?\s*id[\"'\s]*[:=]?[\"'\s]*(\d{1,5})")
+_IMAGE_RE = re.compile(r"[\w.\-]+\.(?:exe|dll)\b", re.IGNORECASE)
+
+
+MAX_GROUNDING = 12
+
+
+def ground(text: str, kb: KnowledgeBase) -> list[Explanation]:
+    """Entries of the curated base that the text mentions, in order of appearance, deduplicated.
+
+    Conservative on purpose: only explicit forms (`EventID=4688`, `AADSTS50126`, `T1003.001`, `certutil.exe`,
+    an M365 operation name) count. A bare number in a log is not assumed to be an event id.
+    """
+    hits: list[tuple[int, Explanation]] = []
+
+    def add(pos: int, table: str, key: str) -> None:
+        found = kb.get(table, key)
+        if found is not None:
+            hits.append((pos, found))
+
+    for m in _TECHNIQUE_RE.finditer(text):
+        add(m.start(), "techniques", m.group(0))
+    for m in _ENTRA_RE.finditer(text):
+        add(m.start(), "entra_errors", m.group(1))
+    for m in _EVENT_ID_RE.finditer(text):
+        n = int(m.group(1))
+        add(m.start(), "sysmon_events" if n <= SYSMON_MAX_ID else "windows_events", str(n))
+    for m in _IMAGE_RE.finditer(text):
+        add(m.start(), "processes", _basename(m.group(0)))
+    lowered = text.lower()
+    for op in kb.keys("ual_operations"):
+        pos = lowered.find(op.lower())
+        if pos >= 0:
+            add(pos, "ual_operations", op)
+
+    out: list[Explanation] = []
+    for _, x in sorted(hits, key=lambda h: h[0]):
+        if x not in out:
+            out.append(x)
+    return out[:MAX_GROUNDING]
+
+
 # --------------------------------------------------------------------------- rendering
 
 DISCLAIMER = (
@@ -318,3 +364,14 @@ def dossier_to_dict(ex: DossierExplanation) -> dict[str, Any]:
         "events": [{"count": s.count, "flagged": s.flagged, **s.explanation.to_dict()} for s in ex.seen],
         "gaps": [{"kind": TABLES[t], "key": k, "count": n} for t, k, n in ex.gaps],
     }
+
+
+def render_log_markdown(entries: list[Explanation]) -> str:
+    lines = ["# Wyjaśnienie logu", "", DISCLAIMER, "", "## Znane terminy rozpoznane w logu", ""]
+    if not entries:
+        lines += ["Nie rozpoznano żadnego terminu z bazy wiedzy. Rozpoznawane są tylko jawne formy: `EventID=4688`, "
+                  "`AADSTS50126`, `T1003.001`, nazwy `.exe`/`.dll` i operacje M365. Dodaj `--llm`, aby poprosić "
+                  "model o wyjaśnienie.", ""]
+    for x in entries:
+        lines += _entry_md(x, "###")
+    return "\n".join(lines)

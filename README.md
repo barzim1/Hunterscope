@@ -32,6 +32,8 @@ hunterscope triage -i data/samples -u jkowalski --redact              # USER_A, 
 hunterscope rules                                                     # rules and their ATT&CK mapping
 hunterscope explain 4688 certutil.exe 50126 T1003.001                 # what does this mean? (offline, Polish)
 hunterscope explain -i data/samples -u jkowalski -t 7d                # explain everything in a dossier
+hunterscope explain --log suspicious.txt                              # known terms found in a pasted log (offline)
+hunterscope explain --log suspicious.txt --llm --dry-run --redactor-config my.yaml   # see what an LLM would get
 ```
 
 `data/samples` is synthetic: one account taken over through a phishing mail (password spraying, MFA fatigue,
@@ -51,7 +53,7 @@ look-alike-but-benign activity must stay quiet. Example output without installin
 | **Cases** | SQLite store. Closing or escalating needs a written reason, closed cases are immutable, every change is an append-only audit entry. |
 | **Handover** | `shift-summary`: unresolved (flagged `STALE` after 24 h untouched), escalated, closed FP/TP, each with the analyst's reason. |
 | **Report** | Markdown, JSON, or one static HTML file: no JavaScript, no network requests, escapes everything it renders. |
-| **Explain** | `explain` says in plain language what an event id, Entra code, process, M365 operation, ATT&CK technique or rule means: what it is, the risk, what is normal, what to check next, with a source link. A curated offline knowledge base (110 entries, Polish), nothing generated: an unknown term is reported as unknown, never guessed. Extend it with `--kb`. |
+| **Explain** | `explain` says in plain language what an event id, Entra code, process, M365 operation, ATT&CK technique or rule means: what it is, the risk, what is normal, what to check next, with a source link. A curated offline knowledge base (110 entries, Polish), nothing generated: an unknown term is reported as unknown, never guessed. Extend it with `--kb`. Optionally (`--llm`, off by default) an LLM explains what the base cannot cover, after strict pseudonymization, with `--dry-run` to see the exact payload first. |
 
 ![Shift handover](docs/img/handover-light.png)
 

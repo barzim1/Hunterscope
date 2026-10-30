@@ -6,12 +6,16 @@ Deterministic: fixed case timestamps, fixed analyst name, no real data. Needs Pl
     python scripts/build_screenshots.py [/path/to/chrome]
 
 Without a path Playwright's own browser is used (`playwright install chromium`).
+
+Also shoots the trainer (docs/img/trainer-*.png): a local server with a throwaway database, a fixed scenario token
+and a fixed "time spent", so the screenshots show the same case every run.
 """
 
 from __future__ import annotations
 
 import sys
 import tempfile
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -28,6 +32,15 @@ ROOT = Path(__file__).resolve().parent.parent
 SAMPLES = ROOT / "data" / "samples"
 EXAMPLES = ROOT / "docs" / "examples"
 IMG = ROOT / "docs" / "img"
+
+# A true positive: a macro in a fake invoice starts cmd, which starts hidden PowerShell. Tokens are
+# `<seed>-<template>-<difficulty>-<mix>`; the verdict is derived from the seed, so this one is always the same case.
+TRAINER_TOKEN = "20-ps_encoded-2-s"
+TRAINER_JUSTIFICATION = (
+    "WINWORD.EXE uruchomil cmd.exe, a ten ukryty PowerShell z -enc. Po dekodowaniu payload pobiera skrypt z S3 "
+    "i laczy sie na zewnetrzny adres, w Autostarcie powstal nowy skrot. To realny incydent, nie skan ani test: "
+    "eskaluje do L2, prosze o izolacje hosta i blokade domeny nadawcy."
+)
 
 
 def at(day: int, hh: int, mm: int) -> datetime:
@@ -95,7 +108,44 @@ def shoot(pages: dict[str, str], chrome: str | None) -> None:
 
         pg = open_page(browser, "dossier-jkowalski-redacted", "light")
         pg.screenshot(path=IMG / "dossier-redacted.png", clip={"x": 0, "y": 0, "width": 1200, "height": 560})
+        shoot_trainer(browser)
         browser.close()
+
+
+def shoot_trainer(browser) -> None:
+    """Alert with its logs and the decision panel, then the debrief after a correct verdict."""
+    from hunterscope.trainer.scenarios import generate
+    from hunterscope.trainer.server import make_server
+    from hunterscope.trainer.store import TrainerStore
+
+    scn = generate(TRAINER_TOKEN)
+    key_ids = [e.id for e in scn.events if e.role == "key"]
+    with tempfile.TemporaryDirectory() as tmp:
+        server = make_server("127.0.0.1", 0, TrainerStore(Path(tmp) / "trainer.db"))
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        try:
+            pg = browser.new_page(viewport={"width": 1280, "height": 900}, color_scheme="light")
+            pg.goto(f"http://127.0.0.1:{server.server_address[1]}/")
+            pg.wait_for_selector("#nav button")
+            pg.evaluate(
+                "async (t) => { const r = await fetch('/api/scenario?token=' + t);"
+                " S.cases.alert = newCase(await r.json()); render(); }", TRAINER_TOKEN)
+            pg.wait_for_selector(".alert")
+            pg.screenshot(path=IMG / "trainer-alert.png", clip={"x": 0, "y": 0, "width": 1280, "height": 900})
+
+            # the analyst's decision: key events starred, the right verdict and actions, a written reason
+            pg.evaluate("(ids) => ids.forEach(toggleEvidence)", key_ids)
+            pg.evaluate("(a) => { a.forEach((x) => C.form.actions.add(x)); C.startedAt = Date.now() - 95000; render(); }",
+                        scn.truth.required_actions)
+            pg.check("input[name=verdict][value=tp]")
+            pg.fill("textarea[aria-label=Uzasadnienie]", TRAINER_JUSTIFICATION)
+            pg.click("text=Zatwierdź werdykt")
+            pg.wait_for_selector("text=Wzorcowa notatka do ticketu", timeout=15000)
+            pg.screenshot(path=IMG / "trainer-debrief.png", full_page=True,
+                          clip={"x": 0, "y": 0, "width": 1280, "height": 1000})
+        finally:
+            server.shutdown()
+            server.server_close()
 
 
 def main() -> None:

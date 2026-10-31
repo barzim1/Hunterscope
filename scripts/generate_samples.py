@@ -97,6 +97,16 @@ def build():
         win(t(11, 10, 40, 0), host, nt, 1, "notepad.exe C:\\Users\\jkowalski\\notes.txt", "C:\\Windows\\notepad.exe"),
     ]
 
+    # --- baselines: history the "new for this user" rule compares against ---
+    for day in range(1, 9):  # jkowalski's eight earlier mornings in Warsaw (the attack country is new to him)
+        entra_logs.append(entra(t(day, 7, 40), J, CORP, 0, WAW))
+    # mkrawczyk, a business traveller: ten ordinary days in Warsaw, then one sign-in from Berlin. A weak signal by
+    # design (low weight); the case is here so the rule's false-positive behaviour is visible, not hidden.
+    TRAVELLER, BER = "mkrawczyk@contoso.com", ("Berlin", "DE", 52.52, 13.405)
+    for day in range(1, 11):
+        entra_logs.append(entra(t(day, 8, 0), TRAVELLER, "192.0.2.44", 0, WAW))
+    entra_logs.append(entra(t(11, 9, 0), TRAVELLER, "198.51.100.88", 0, BER))
+
     # --- password spraying: one IP, seven accounts, one attempt each; one account then signs in ---
     # No single account shows more than one failure, so only a rule that looks across accounts sees it.
     SPRAY, AMS = "203.0.113.77", ("Amsterdam", "NL", 52.3676, 4.9041)

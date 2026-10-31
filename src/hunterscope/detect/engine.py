@@ -2,19 +2,24 @@ from __future__ import annotations
 
 from typing import Any
 
-from hunterscope.detect.rules import CROSS_RULES, META_RULES, RULES
+from hunterscope.detect.rules import BASELINE_RULES, CROSS_RULES, META_RULES, RULES
 from hunterscope.detect.sigma_rules import sigma_findings
 from hunterscope.models import Event, Finding
 from hunterscope.sigma import RuleSet
 
 
 def run_detections(
-    events: list[Event], cfg: dict[str, Any], context: list[Event] | None = None, sigma: RuleSet | None = None
+    events: list[Event],
+    cfg: dict[str, Any],
+    context: list[Event] | None = None,
+    sigma: RuleSet | None = None,
+    history: list[Event] | None = None,
 ) -> list[Finding]:
     """Run every enabled rule over time-ordered events, then meta rules that correlate their findings.
 
     `context` holds other accounts' events that share an IP with the target. Only cross-entity rules read it,
-    so every per-user rule keeps judging the target's own events alone."""
+    so every per-user rule keeps judging the target's own events alone. `history` holds the same accounts' earlier
+    events (before the window); only baseline rules read it."""
     ordered = sorted(events, key=lambda e: e.ts)
     shared = sorted(context or [], key=lambda e: e.ts)
     findings: list[Finding] = []
@@ -25,6 +30,10 @@ def run_detections(
         findings.extend(fn(ordered, rule_cfg, rule_id))
     if sigma is not None:
         findings.extend(sigma_findings(ordered, sigma, cfg["sigma"]))
+    for rule_id, baseline in BASELINE_RULES.items():
+        rule_cfg = cfg["rules"].get(rule_id)
+        if rule_cfg and rule_cfg.get("enabled", True):
+            findings.extend(baseline(ordered, history or [], rule_cfg, rule_id))
     for rule_id, cross in CROSS_RULES.items():
         rule_cfg = cfg["rules"].get(rule_id)
         if rule_cfg and rule_cfg.get("enabled", True):

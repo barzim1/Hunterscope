@@ -49,7 +49,7 @@ look-alike-but-benign activity must stay quiet. Example output without installin
 | | |
 |---|---|
 | **Ingest** | Entra ID sign-in logs, M365 Unified Audit Log, Windows Security and Sysmon (JSON), `.eml`. Directories are expanded; bad records are counted, not fatal. |
-| **Detect** | 11 rules: brute force that succeeded, password spraying across many accounts from one IP, MFA fatigue, impossible travel, off-hours logon, malicious inbox rules, OAuth consent, LSASS read access, LotL command lines, suspicious email, and *phish followed by a sign-in from an IP never seen before*. Thresholds and weights are YAML. With `--sigma`, also the SigmaHQ Windows rules through a built-in Sigma evaluator (see below). |
+| **Detect** | 12 rules: brute force that succeeded, password spraying across many accounts from one IP, MFA fatigue, a sign-in property new to the account (country, client, app), impossible travel, off-hours logon, malicious inbox rules, OAuth consent, LSASS read access, LotL command lines, suspicious email, and *phish followed by a sign-in from an IP never seen before*. Thresholds and weights are YAML. With `--sigma`, also the SigmaHQ Windows rules through a built-in Sigma evaluator (see below). |
 | **Score** | 0-100, and the report shows where every point came from: repeats count 25%, one rule is capped, multi-stage activity adds a bonus. |
 | **Redact** | Deterministic pseudonyms (`USER_A`, `INTERNAL_IP_1`); PESEL only with a valid checksum; optional HMAC mode so labels are stable and not reversible by brute force. |
 | **Cases** | SQLite store. Closing or escalating needs a written reason, closed cases are immutable, every change is an append-only audit entry. |
@@ -135,6 +135,9 @@ machine account instead of the target user. Both are fixed and covered by tests.
   LSASS rule were deliberately left uninspected to keep the holdout clean.
 - **The cloud rules have no public labelled dataset.** They are validated with synthetic scenarios only. The
   timestamps, users and domains are fictional.
+- **The "new for this user" rule is weak by design and validated on synthetic data only.** A business trip looks
+  exactly like an attack to it (the sample traveller scores 10/100, LOW), it is silent without a baseline, and no
+  public dataset has per-account sign-in history to measure it on.
 - **The cross-account spray rule is validated on synthetic scenarios only.** It produced no finding on the one public
   labelled spray dataset (in the holdout, deliberately not inspected, so the reason is unknown), and the dev half has
   only 14 failed logons in 52 datasets, too few to test it.

@@ -155,7 +155,15 @@ def build_dossier(
     skip = user_key(target) if kind == "user" else None
     related = related_accounts([*windowed, *context], skip_user=skip)
 
-    findings = run_detections(windowed, cfg, context=context, sigma=sigma)
+    # The same accounts' earlier sign-ins: the baseline for "new for this user" rules (not shown in the timeline).
+    history: list[Event] = []
+    if kind in {"user", "ip"}:
+        users = {user_key(e.user) for e in windowed if e.user} - {""}
+        lookback = timedelta(days=cfg["rules"].get("new_sign_in_properties", {}).get("lookback_days", 30))
+        history = [e for e in events if e.source == "entra" and user_key(e.user) in users
+                   and since - lookback <= e.ts < since]
+
+    findings = run_detections(windowed, cfg, context=context, sigma=sigma, history=history)
     return Dossier(
         kind=kind,
         target=target,

@@ -1197,6 +1197,20 @@ techniques:
       - "Czy adres, kraj, urządzenie lub godzina odbiegają od zwykłego wzorca konta?"
     source: https://attack.mitre.org/techniques/T1078/
 
+  "T1078.004":
+    title: "T1078.004: Valid Accounts: Cloud Accounts"
+    what: >-
+      Użycie prawdziwych poświadczeń konta w chmurze (Entra ID, Microsoft 365) przez kogoś innego niż właściciel.
+    risk: >-
+      Atakujący loguje się legalną ścieżką, często bez żadnego złośliwego kodu, więc wykryć go można głównie po
+      kontekście logowania: kraj, klient, aplikacja, godzina, wcześniejsze nieudane próby.
+    normal: >-
+      Zwykłe logowania właściciela, także w podróży czy z nowego telefonu; liczy się to, co dzieje się po logowaniu.
+    check:
+      - "Czy właściwości logowania (kraj, klient, aplikacja) odbiegają od historii konta?"
+      - "Czy po logowaniu pojawiły się reguły skrzynki, zgody OAuth lub nowe metody MFA?"
+    source: https://attack.mitre.org/techniques/T1078/004/
+
   "T1105":
     title: "T1105: Ingress Tool Transfer"
     what: >-
@@ -1382,6 +1396,26 @@ rules:
       - "Co zrobiło konto po sukcesie: reguły skrzynki, zgody OAuth, nowe urządzenia?"
       - "Reset hasła i odwołanie sesji, jeśli użytkownik nie rozpoznaje logowania."
     source: https://attack.mitre.org/techniques/T1110/
+
+  new_sign_in_properties:
+    title: "Reguła new_sign_in_properties: logowanie z cechą, której to konto jeszcze nie miało"
+    what: >-
+      Udane logowanie z krajem, klientem (np. IMAP4 zamiast przeglądarki) lub aplikacją, których to konto nie
+      pokazało w swojej historii (domyślnie 30 dni, wartość jest znana po co najmniej dwóch wystąpieniach). To
+      odpowiednik „nietypowych właściwości logowania" z Entra. Bez wystarczającej historii reguła milczy, bo
+      wtedy wszystko byłoby nowe.
+    risk: >-
+      Sama w sobie słaby sygnał (niska waga). Wzmacnia inne wskazówki: nowy kraj plus spray, odrzucone prompty MFA
+      albo nowa reguła skrzynki to już obraz przejęcia konta. Starszy klient (IMAP, POP) bywa używany, bo omija MFA.
+    normal: >-
+      Służbowy wyjazd, nowa aplikacja po wdrożeniu, nowy telefon, VPN wychodzący w innym kraju. Wyjazd wygląda
+      identycznie jak atak, więc nie zamykaj sprawy na podstawie samego tego sygnału.
+    check:
+      - "Czy użytkownik jest w podróży albo ma urlop (kalendarz, zgłoszenie od przełożonego)?"
+      - "Czy ten sam adres lub kraj pojawia się w innych kontach (zob. password_spray_ip)?"
+      - "Jakie są dalsze kroki po logowaniu: reguły skrzynki, zgody OAuth, nowe urządzenia MFA?"
+      - "Jeśli klient to starszy protokół (IMAP/POP/SMTP), sprawdź, czy konto go w ogóle używa i czy da się go wyłączyć."
+    source: https://attack.mitre.org/techniques/T1078/004/
 
   password_spray_ip:
     title: "Reguła password_spray_ip: jedno IP, wiele kont, po kilka prób na konto"

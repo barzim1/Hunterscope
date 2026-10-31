@@ -6,6 +6,10 @@ scoring:
   multi_stage_bonus_cap: 20
   levels: {critical: 80, high: 60, medium: 30, low: 10}
 
+sigma:                         # third-party Sigma rules (triage --sigma); see docs/sigma-protocol.md
+  weights: {critical: 45, high: 30, medium: 15}   # score weight by the rule's own level
+  max_evidence: 20             # events kept per finding
+
 report:
   timeline_limit: 200
 

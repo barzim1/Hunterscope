@@ -57,7 +57,8 @@ def ual(d, upn, ip, op, **params):
 
 
 def win(d, host, user, event_id, cmd=None, image=None):
-    rec = {"TimeCreated": iso(d), "EventID": event_id, "Computer": host, "User": user}
+    rec = {"TimeCreated": iso(d), "EventID": event_id, "Computer": host, "User": user,
+           "Channel": "Microsoft-Windows-Sysmon/Operational"}
     if cmd:
         rec.update(CommandLine=cmd, Image=image)
     return rec

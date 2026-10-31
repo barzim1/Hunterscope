@@ -106,6 +106,34 @@ count is reached.
 Validation: synthetic scenarios and adversarial unit tests only. On the public datasets it produced no finding (see
 `coverage.md`); the one labelled spray dataset is in the holdout and was not inspected.
 
+### Sigma
+
+`hunterscope.sigma` is a small Sigma evaluator (about 600 lines). Rules are compiled once into closures and matched
+against flat event records, so the same code serves two uses: `triage --sigma` (findings in a dossier) and
+`coverage --sigma` (the benchmark in [`coverage.md`](coverage.md), protocol in [`sigma-protocol.md`](sigma-protocol.md)).
+
+```bash
+python scripts/fetch_datasets.py sigma                                  # SigmaHQ rules/windows, pinned in the report
+hunterscope triage -i exports/ -H srv-db01 --sigma data/external/sigma  # accepts the checkout or rules/windows
+```
+
+- **Supported:** value lists (OR), field maps (AND), lists of maps; `contains`, `startswith`, `endswith`, `all`,
+  `re` (+`i`, `m`, `s`), `windash`, `cidr`, `base64`, `base64offset` (+`wide`/`utf16le`), `exists`, `lt/lte/gt/gte`,
+  null; wildcards with Sigma's escaping (`\*` is a literal star, `\\*` a backslash then a wildcard); conditions with
+  `and`/`or`/`not`, parentheses, `1 of` / `all of` over `them` or a name pattern; several conditions (OR).
+- **Reported as unsupported, never half-evaluated:** aggregations (`count`, `near`), keyword selections, `fieldref`,
+  `expand`, unknown modifiers. Of the 2,260 rules inside the filter, 7 fall here.
+- **Which records a rule sees** (`sigma/logsource.py`): Sysmon records by `EventID` (1 process creation, 3 network, 7 image
+  load, 8 remote thread, 10 process access, 11 file, 12/13/14 registry, 17/18 pipes, 19-21 WMI, 22 DNS, ...), Security
+  4688 as process creation with Sysmon field names (`NewProcessName` -> `Image`, ...), and `service:` rules by
+  `Channel`. The record needs `Channel` and `EventID`.
+- **Filter (fixed before measuring):** status stable/test/experimental, level medium or higher, product windows.
+- **Findings:** one per (rule, host), grouped by the rule's level (`sigma_critical|high|medium`, weights in the
+  `sigma:` block of `rules.yaml`). The tactic comes from the rule's ATT&CK tags; an untagged rule gets `unknown`,
+  which does not count towards the multi-stage bonus.
+- **Cost:** `--sigma` keeps each Windows record on its event, so memory grows with the export. Matching runs at
+  roughly 6,000 records per second on one core; loading the 2,000 rules takes about 5 seconds.
+
 ### Phishing triage
 
 `.eml` is parsed with the stdlib (`email`, policy.default): SPF/DKIM/DMARC from `Authentication-Results`, origin IP from
@@ -302,7 +330,7 @@ employer data.
 - [ ] URL reputation / sandbox enrichment (optional, off by default; offline mode must keep working)
 - [x] SQLite case store + `--shift-summary` handover (statuses, notes, open anomalies; md + terminal)
 - [x] ATT&CK coverage measured against public datasets ([`coverage.md`](coverage.md))
-- [ ] Sigma rules via pySigma for stateless patterns, evaluated on a held-out split of the same datasets
+- [x] Sigma rules (own evaluator) benchmarked against the same dev/holdout split, and available as `triage --sigma`
 - [x] Sysmon 10 (ProcessAccess to lsass): closed the largest measured gap (T1003.001), measured with a holdout
 - [x] Standalone HTML report (dossier and handover)
 - [ ] Live OpenSearch client (last, only after everything works offline)

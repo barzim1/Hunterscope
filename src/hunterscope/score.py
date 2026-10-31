@@ -47,7 +47,7 @@ def compute_score(findings: list[Finding], cfg: dict[str, Any]) -> Score:
         contributions.append(Contribution(rule_id, group[0].tactic, len(group), round(points, 1)))
     contributions.sort(key=lambda c: c.points, reverse=True)
 
-    tactics = {c.tactic for c in contributions}
+    tactics = {c.tactic for c in contributions if c.tactic != "unknown"}
     bonus = 0
     reason = ""
     if len(tactics) > 1:

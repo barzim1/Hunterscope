@@ -3,11 +3,13 @@ from __future__ import annotations
 from typing import Any
 
 from hunterscope.detect.rules import CROSS_RULES, META_RULES, RULES
+from hunterscope.detect.sigma_rules import sigma_findings
 from hunterscope.models import Event, Finding
+from hunterscope.sigma import RuleSet
 
 
 def run_detections(
-    events: list[Event], cfg: dict[str, Any], context: list[Event] | None = None
+    events: list[Event], cfg: dict[str, Any], context: list[Event] | None = None, sigma: RuleSet | None = None
 ) -> list[Finding]:
     """Run every enabled rule over time-ordered events, then meta rules that correlate their findings.
 
@@ -21,6 +23,8 @@ def run_detections(
         if not rule_cfg or not rule_cfg.get("enabled", True):
             continue
         findings.extend(fn(ordered, rule_cfg, rule_id))
+    if sigma is not None:
+        findings.extend(sigma_findings(ordered, sigma, cfg["sigma"]))
     for rule_id, cross in CROSS_RULES.items():
         rule_cfg = cfg["rules"].get(rule_id)
         if rule_cfg and rule_cfg.get("enabled", True):

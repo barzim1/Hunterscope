@@ -2,7 +2,7 @@
 
 Needs only `git` and network access to github.com. Sparse + blobless clones keep the download small
 (about 125 MB for OTRF's Windows sets and 60 MB for EVTX-ATTACK-SAMPLES). Nothing is redistributed
-from this repository: the datasets carry their own licences (OTRF MIT, EVTX-ATTACK-SAMPLES GPL-3.0).
+from this repository. Licences: OTRF MIT, EVTX-ATTACK-SAMPLES GPL-3.0, SigmaHQ rules DRL 1.1.
 
     python scripts/fetch_datasets.py            # both
     python scripts/fetch_datasets.py otrf       # only OTRF
@@ -19,6 +19,8 @@ SOURCES = {
     "otrf": ("https://github.com/OTRF/Security-Datasets", "security-datasets",
              ["datasets/atomic/_metadata", "datasets/atomic/windows"]),
     "evtx": ("https://github.com/sbousseaden/EVTX-ATTACK-SAMPLES", "evtx-attack-samples", []),
+    # Third-party detection rules (Detection Rule License 1.1): fetched, never committed to this repo.
+    "sigma": ("https://github.com/SigmaHQ/sigma", "sigma", ["rules/windows"]),
 }
 
 

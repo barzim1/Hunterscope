@@ -12,6 +12,7 @@ from hunterscope.detect import run_detections
 from hunterscope.models import Event, Finding, host_key, user_key
 from hunterscope.netutil import is_internal
 from hunterscope.score import Score, compute_score
+from hunterscope.sigma import RuleSet
 
 _RANGE_RE = re.compile(r"^(\d+)([mhdw])$")
 _UNITS = {"m": "minutes", "h": "hours", "d": "days", "w": "weeks"}
@@ -137,6 +138,7 @@ def build_dossier(
     cfg: dict[str, Any],
     anchor: datetime | None = None,
     skipped: int = 0,
+    sigma: RuleSet | None = None,
 ) -> Dossier:
     """`anchor` is the window end; default = latest event for the target (offline data)."""
     mine = select_events(events, kind, target)
@@ -153,7 +155,7 @@ def build_dossier(
     skip = user_key(target) if kind == "user" else None
     related = related_accounts([*windowed, *context], skip_user=skip)
 
-    findings = run_detections(windowed, cfg, context=context)
+    findings = run_detections(windowed, cfg, context=context, sigma=sigma)
     return Dossier(
         kind=kind,
         target=target,

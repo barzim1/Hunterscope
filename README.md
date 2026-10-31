@@ -11,6 +11,11 @@ between analysts.
 It runs offline on log exports (Entra ID sign-ins, M365 audit log, Windows Security/Sysmon, `.eml` files), so it
 can be demonstrated without a SIEM and without anyone's real data.
 
+Around the triage engine are two more tools for the same analyst: **`explain`**, which says in plain language what an
+event, code or process means, and **`train`**, a simulator for practising TP / benign TP / FP decisions on generated
+alerts. A companion project, [ioc-enricher](https://github.com/barzim1/ioc-enricher), checks IPs, domains, URLs and
+hashes against VirusTotal and AbuseIPDB and returns a score with its reasoning.
+
 ![Dossier: risk score, tactics observed and score breakdown](docs/img/dossier-light.png)
 
 ## Why it exists
@@ -67,6 +72,10 @@ TP, benign TP or FP. After the verdict it shows the key events, the red herrings
 ticket note. 16 scenario types, three difficulty levels, a night-shift queue with a realistic FP-heavy mix,
 weak-spot practice and a mistake profile. Standard library only, synthetic data. Documentation (in Polish):
 [`docs/trainer.md`](docs/trainer.md).
+
+![Trainer: an alert with correlated logs, the verdict hidden, and the decision panel](docs/img/trainer-alert.png)
+
+![Trainer: the debrief after a verdict, with the score broken down, the key events and a model ticket note](docs/img/trainer-debrief.png)
 
 ## How I checked it works
 
@@ -147,6 +156,11 @@ machine account instead of the target user. Both are fixed and covered by tests.
 - `lsass_access` needs Sysmon EventID 10 for lsass, which many production configurations filter out; its allowlist
   is a starting point, not a universal one.
 - Single-analyst SQLite on a local disk, offline files only (no live SIEM client), not hardened for production.
+- **The optional LLM layer (`explain --llm`) has only been tested against a stubbed client**, never the live API. It
+  is off by default and pseudonymizes before anything leaves the machine, but treat it as unproven.
+- **The `explain` knowledge base (110 entries) is hand-written and was not checked line by line against the sources it
+  links.** The trainer's 16 scenarios are synthetic; their tests cover scoring and generation, not whether every
+  explanation matches real-world behaviour.
 
 ## Layout
 
@@ -162,6 +176,7 @@ scripts/       generate_samples.py, fetch_datasets.py, build_screenshots.py
 docs/          reference.md (full docs), coverage.md (measured), examples/, img/
 ```
 
-About 2,700 lines of Python in `src`, 1,200 in `tests`. CI (ruff + pytest) runs on Python 3.10 and 3.12.
+About 7,300 lines of Python in `src` (3,800 of them the trainer, plus a 900-line browser UI) and 2,200 in `tests`
+(319 tests). CI (ruff + pytest) runs on Python 3.10 and 3.12.
 Full documentation: [`docs/reference.md`](docs/reference.md). Develop with `pip install -e ".[dev]"`, then
 `ruff check . && pytest -q`.

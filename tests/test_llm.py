@@ -3,7 +3,6 @@ import sys
 from pathlib import Path
 from types import SimpleNamespace
 
-import anthropic
 import pytest
 from typer.testing import CliRunner
 
@@ -22,6 +21,8 @@ from hunterscope.llm import (
     render_llm_markdown,
 )
 from hunterscope.redactor import Redactor
+
+anthropic = pytest.importorskip("anthropic", reason="install the 'llm' extra to run these tests")
 
 SAMPLES = Path(__file__).resolve().parent.parent / "data" / "samples"
 runner = CliRunner()

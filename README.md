@@ -126,6 +126,6 @@ scripts/       generate_samples.py, fetch_datasets.py, build_screenshots.py
 docs/          reference.md (full docs), coverage.md (measured), examples/, img/
 ```
 
-About 2,700 lines of Python in `src`, 1,200 in `tests`. CI (ruff + pytest) runs on Python 3.10 and 3.12.
+CI (ruff + pytest) runs on Python 3.10 and 3.12.
 Full documentation: [`docs/reference.md`](docs/reference.md). Develop with `pip install -e ".[dev]"`, then
 `ruff check . && pytest -q`.

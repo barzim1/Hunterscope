@@ -496,6 +496,8 @@ def coverage_cmd(
     output: Annotated[Path | None, typer.Option("--output", "-o")] = None,
     config: Annotated[Path | None, typer.Option(help="Rules config overriding defaults")] = None,
     ablate: Annotated[str, typer.Option(help="Comma-separated rule ids: also run without them and report the delta")] = "",
+    sigma: Annotated[Path | None, typer.Option(exists=True, file_okay=False,
+                                               help="Checkout of SigmaHQ/sigma (or its rules/windows): benchmark it too")] = None,
 ) -> None:
     """Measure rule coverage against public labelled datasets (see scripts/fetch_datasets.py)."""
     if otrf is None and evtx is None:
@@ -524,8 +526,20 @@ def coverage_cmd(
         except RuntimeError as exc:
             err.print(f"[red]{exc}[/red]")
             raise typer.Exit(2) from exc
+    extra: list[str] = []
+    if sigma:
+        if not otrf_results:
+            raise typer.BadParameter("--sigma needs --otrf: the rules are scored on its labelled datasets")
+        from hunterscope import sigma_bench as sb
+        from hunterscope.sigma import load_ruleset
+
+        rules_dir = sigma / "rules" / "windows" if (sigma / "rules" / "windows").is_dir() else sigma
+        ruleset = load_ruleset(rules_dir)
+        err.print(f"Running {len(ruleset)} Sigma rules over {len(otrf_results)} datasets...")
+        sigma_results = sb.run_sigma_otrf([r.dataset for r in otrf_results], ruleset)
+        extra = sb.render_sigma(ruleset, sigma_results, otrf_results, cov.declared_techniques(cfg), cov.git_head(sigma))
     text = cov.render(otrf_results, evtx_rows, cfg, cov.git_head(otrf) if otrf else "",
-                      cov.git_head(evtx) if evtx else "", baseline, ablated)
+                      cov.git_head(evtx) if evtx else "", baseline, ablated, extra)
     if output:
         output.parent.mkdir(parents=True, exist_ok=True)
         output.write_text(text, encoding="utf-8")

@@ -2,7 +2,7 @@
 
 Needs only `git` and network access to github.com. Sparse + blobless clones keep the download small
 (about 125 MB for OTRF's Windows sets and 60 MB for EVTX-ATTACK-SAMPLES). Nothing is redistributed
-from this repository: the datasets carry their own licences (OTRF MIT, EVTX-ATTACK-SAMPLES GPL-3.0, SigmaHQ rules DRL 1.1).
+from this repository. Licences: OTRF MIT, EVTX-ATTACK-SAMPLES GPL-3.0, SigmaHQ rules DRL 1.1.
 
     python scripts/fetch_datasets.py            # both
     python scripts/fetch_datasets.py otrf       # only OTRF

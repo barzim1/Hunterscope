@@ -1371,7 +1371,7 @@ rules:
     title: "Reguła failures_then_success: zgadywanie hasła zakończone sukcesem"
     what: >-
       Wiele nieudanych logowań na jedno konto z jednego adresu w krótkim czasie, po których nastąpiło udane
-      logowanie. Reguła widzi tylko jedno konto naraz, więc nie wykrywa password sprayingu na wielu kontach.
+      logowanie. Reguła widzi tylko jedno konto naraz, więc password spraying na wielu kontach wykrywa osobna reguła password_spray_ip.
     risk: >-
       Prawdopodobne przejęcie konta: atakujący trafił w hasło. Dalsze kroki to często przeglądanie poczty,
       zakładanie reguł i wyłudzenia.
@@ -1382,6 +1382,25 @@ rules:
       - "Co zrobiło konto po sukcesie: reguły skrzynki, zgody OAuth, nowe urządzenia?"
       - "Reset hasła i odwołanie sesji, jeśli użytkownik nie rozpoznaje logowania."
     source: https://attack.mitre.org/techniques/T1110/
+
+  password_spray_ip:
+    title: "Reguła password_spray_ip: jedno IP, wiele kont, po kilka prób na konto"
+    what: >-
+      Z jednego adresu IP w krótkim oknie czasu nieudane logowania na wiele różnych kont, po jednej–dwie próby
+      na każde. To wzorzec password sprayingu: atakujący sprawdza jedno popularne hasło na wielu kontach, żeby nie
+      uruchomić blokady per konto. Pojedyncze konto wygląda niewinnie, widać to dopiero po adresie.
+    risk: >-
+      Jeśli któreś z atakowanych kont zalogowało się potem z tego samego adresu, jest przejęte. Reszta kont
+      przeżyła tylko dlatego, że hasło nie pasowało, i hasło zgadywane jest nadal w obiegu.
+    normal: >-
+      Wspólny adres wyjściowy firmy, VPN lub NAT, za którym kilku użytkowników pomyliło hasło rano po zmianie
+      polityki. Odróżnia je liczba kont i to, czy po serii był udany login z tego adresu.
+    check:
+      - "Czy adres to znane wyjście firmy lub VPN (dodaj do ignore_ips po potwierdzeniu)?"
+      - "Które z atakowanych kont zalogowało się udanie z tego adresu: reset hasła, odwołanie sesji, MFA."
+      - "Czy ten sam adres uderzał w inne konta, których nie masz w logach (zapytaj o więcej źródeł)?"
+      - "Reputacja adresu i kraj; blokada na brzegu, jeśli to cudzy adres."
+    source: https://attack.mitre.org/techniques/T1110/003/
 
   mfa_fatigue:
     title: "Reguła mfa_fatigue: zalewanie powiadomieniami MFA"

@@ -86,6 +86,21 @@
 <p class="empty">None extracted.</p>
 {% endif %}
 
+<h2>{{ "Accounts seen from this IP" if d.kind == "ip" else "Other accounts from the same IPs" }}</h2>
+{% if d.related %}
+<div class="tw"><table>
+  <thead><tr><th>Account</th><th>IP</th><th class="num">Failures</th><th class="num">Successes</th><th>First (UTC)</th><th>Last (UTC)</th></tr></thead>
+  <tbody>
+  {% for r in d.related[:25] %}
+  <tr><td>{{ r.user }}</td><td class="mono nw">{{ r.ip }}</td><td class="num">{{ r.failures }}</td><td class="num">{{ r.successes }}</td><td class="mono nw">{{ r.first|ts }}</td><td class="mono nw">{{ r.last|ts }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+{% if d.related|length > 25 %}<p class="small muted">{{ d.related|length - 25 }} more account(s) not shown.</p>{% endif %}
+{% else %}
+<p class="empty">None: no other account authenticated from the addresses seen here.</p>
+{% endif %}
+
 <h2>Timeline</h2>
 <p class="small muted">Rows marked <span class="chip flag">⚑ flagged</span> are evidence for at least one finding.</p>
 <div class="tw"><table>

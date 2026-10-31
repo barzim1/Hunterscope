@@ -25,6 +25,35 @@ def parse_timerange(value: str) -> timedelta:
 
 
 @dataclass
+class RelatedAccount:
+    """Another account seen authenticating from an IP the target used (or, in IP mode, every account from it)."""
+
+    user: str
+    ip: str
+    failures: int
+    successes: int
+    first: datetime
+    last: datetime
+
+
+def related_accounts(pool: list[Event], skip_user: str | None = None) -> list[RelatedAccount]:
+    rows: dict[tuple[str, str], RelatedAccount] = {}
+    for e in pool:
+        if e.source not in {"entra", "windows"} or e.action not in {"signin", "logon"} or not e.ip or not e.user:
+            continue
+        if skip_user is not None and user_key(e.user) == skip_user:
+            continue
+        key = (user_key(e.user), e.ip)
+        row = rows.get(key)
+        if row is None:
+            row = rows[key] = RelatedAccount(e.user, e.ip, 0, 0, e.ts, e.ts)
+        row.failures += e.outcome == "failure"
+        row.successes += e.outcome == "success"
+        row.first, row.last = min(row.first, e.ts), max(row.last, e.ts)
+    return sorted(rows.values(), key=lambda r: (-r.failures, -r.successes, r.user))
+
+
+@dataclass
 class Dossier:
     kind: str
     target: str
@@ -35,6 +64,7 @@ class Dossier:
     score: Score
     sources: Counter[str]
     skipped: int = 0
+    related: list[RelatedAccount] = field(default_factory=list)
     generated: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
     @property
@@ -80,6 +110,11 @@ class Dossier:
                 for f in self.findings
             ],
             "iocs": self.iocs(),
+            "related_accounts": [
+                {"user": r.user, "ip": r.ip, "failures": r.failures, "successes": r.successes,
+                 "first": r.first.isoformat(), "last": r.last.isoformat()}
+                for r in self.related
+            ],
         }
 
 
@@ -87,6 +122,9 @@ def select_events(events: list[Event], kind: str, target: str) -> list[Event]:
     if kind == "user":
         key = user_key(target)
         return [e for e in events if user_key(e.user) == key]
+    if kind == "ip":
+        wanted = target.strip()
+        return [e for e in events if e.ip == wanted]
     key = host_key(target)
     return [e for e in events if host_key(e.host) == key]
 
@@ -107,7 +145,15 @@ def build_dossier(
     until = anchor or max(e.ts for e in mine)
     since = until - timerange
     windowed = sorted((e for e in mine if since <= e.ts <= until), key=lambda e: e.ts)
-    findings = run_detections(windowed, cfg)
+
+    # Other accounts that touched the same IPs in the window: needed to see a spray, which no single account shows.
+    own = {id(e) for e in windowed}
+    ips = {e.ip for e in windowed if e.ip}
+    context = [e for e in events if e.ip in ips and since <= e.ts <= until and id(e) not in own]
+    skip = user_key(target) if kind == "user" else None
+    related = related_accounts([*windowed, *context], skip_user=skip)
+
+    findings = run_detections(windowed, cfg, context=context)
     return Dossier(
         kind=kind,
         target=target,
@@ -118,4 +164,5 @@ def build_dossier(
         score=compute_score(findings, cfg),
         sources=Counter(e.source for e in windowed),
         skipped=skipped,
+        related=related,
     )

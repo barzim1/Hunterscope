@@ -19,6 +19,10 @@ from hunterscope.models import Event, Finding, user_key
 RuleFn = Callable[[list[Event], dict[str, Any], str], list[Finding]]
 RULES: dict[str, RuleFn] = {}
 
+# Baseline rules compare the window with the same account's earlier history.
+BaselineRuleFn = Callable[[list[Event], list[Event], dict[str, Any], str], list[Finding]]
+BASELINE_RULES: dict[str, BaselineRuleFn] = {}
+
 # Cross-entity rules see the target's events AND events of other accounts that share an IP with it.
 CrossRuleFn = Callable[[list[Event], list[Event], dict[str, Any], str], list[Finding]]
 CROSS_RULES: dict[str, CrossRuleFn] = {}
@@ -30,6 +34,14 @@ EMAIL_RE = re.compile(r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}")
 def rule(name: str) -> Callable[[RuleFn], RuleFn]:
     def register(fn: RuleFn) -> RuleFn:
         RULES[name] = fn
+        return fn
+
+    return register
+
+
+def baseline_rule(name: str) -> Callable[[BaselineRuleFn], BaselineRuleFn]:
+    def register(fn: BaselineRuleFn) -> BaselineRuleFn:
+        BASELINE_RULES[name] = fn
         return fn
 
     return register
@@ -103,6 +115,81 @@ def failures_then_success(events: list[Event], cfg: dict[str, Any], rid: str) ->
                     )
                 )
             recent[key].clear()
+    return out
+
+
+_PROPERTY_LABEL = {"country": "country", "client_app": "client", "app": "application", "city": "city", "ip": "IP"}
+
+
+def _property(e: Event, name: str) -> str | None:
+    value = e.detail.get("client_app") if name == "client_app" else getattr(e, name, None)
+    return str(value).strip() if value else None
+
+
+def _is_success_signin(e: Event) -> bool:
+    return e.source == "entra" and e.action == "signin" and e.outcome == "success" and bool(user_key(e.user))
+
+
+@baseline_rule("new_sign_in_properties")
+def new_sign_in_properties(
+    events: list[Event], history: list[Event], cfg: dict[str, Any], rid: str
+) -> list[Finding]:
+    """A successful sign-in with a country / client / application this account has not shown before.
+
+    Deliberately a weak signal (low weight): a business trip triggers it. It is silent without enough history,
+    because with no baseline everything is "new". A value counts as familiar only after `min_seen` sightings, so a
+    single odd past sign-in does not whitelist it."""
+    props = list(cfg["properties"])
+    lookback = timedelta(days=cfg["lookback_days"])
+    current: dict[str, list[Event]] = defaultdict(list)
+    for e in events:
+        if _is_success_signin(e):
+            current[user_key(e.user)].append(e)
+    past: dict[str, list[Event]] = defaultdict(list)
+    for e in history:
+        if _is_success_signin(e):
+            past[user_key(e.user)].append(e)
+
+    out: list[Finding] = []
+    for user, window in current.items():
+        first = window[0].ts
+        base = [h for h in past.get(user, []) if first - lookback <= h.ts < first]
+        days = {h.ts.date() for h in base}
+        if len(base) < cfg["min_history_signins"] or len(days) < cfg["min_history_days"]:
+            continue
+        seen: dict[str, Counter[str]] = {
+            p: Counter(v.lower() for h in base if (v := _property(h, p))) for p in props
+        }
+        spelling = {(p, v.lower()): v for h in base for p in props if (v := _property(h, p))}  # for display only
+        announced: set[tuple[str, str]] = set()
+        for e in window:
+            new: dict[str, str] = {}
+            for p in props:
+                value = _property(e, p)
+                if value and seen[p][value.lower()] < cfg["min_seen"] and (p, value.lower()) not in announced:
+                    new[p] = value
+            if not new:
+                continue
+            announced.update((p, v.lower()) for p, v in new.items())
+            usual = "; ".join(
+                f"{_PROPERTY_LABEL.get(p, p)} "
+                + ", ".join(f"{spelling[(p, k)]} ({n})" for k, n in seen[p].most_common(3))
+                for p in props if seen[p]
+            )
+            out.append(
+                _finding(
+                    rid, cfg,
+                    "Unfamiliar sign-in properties: "
+                    + ", ".join(f"{_PROPERTY_LABEL.get(p, p)} {v}" for p, v in new.items()),
+                    f"First sign-in in this window with a property not seen in this account's {len(base)} earlier "
+                    f"sign-ins over {len(days)} days. Usual: {usual}. A business trip or a new tool looks the same, "
+                    "so treat it as context for other findings, not as a verdict.",
+                    [e],
+                    iocs=[("ip", e.ip)] if e.ip else [],
+                    severity="medium" if len(new) >= 2 else None,
+                    weight=cfg["weight_multi"] if len(new) >= 2 else None,
+                )
+            )
     return out
 
 

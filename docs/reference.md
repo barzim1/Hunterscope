@@ -72,6 +72,7 @@ Rebuild the examples and screenshots (deterministic, synthetic): `pip install -e
 | oauth_consent | persistence | T1528 |
 | lsass_access | credential-access | T1003.001 |
 | password_spray_ip (cross-account) | credential-access | T1110.003 |
+| new_sign_in_properties (baseline) | initial-access | T1078.004 |
 | lotl_commandline | execution | T1059 (+ per pattern: T1027, T1105, T1003.001, T1033, T1490, ...) |
 | suspicious_email | initial-access | T1566.001, T1566.002 |
 | phish_then_new_signin (meta rule) | initial-access | T1566, T1078 |
@@ -133,6 +134,29 @@ hunterscope triage -i exports/ -H srv-db01 --sigma data/external/sigma  # accept
   which does not count towards the multi-stage bonus.
 - **Cost:** `--sigma` keeps each Windows record on its event, so memory grows with the export. Matching runs at
   roughly 6,000 records per second on one core; loading the 2,000 rules takes about 5 seconds.
+
+### Baselines: "new for this user"
+
+`new_sign_in_properties` flags a successful Entra sign-in whose country, client (e.g. IMAP4 instead of a browser) or
+application this account has not shown before. It is the offline counterpart of Entra's "unfamiliar sign-in
+properties", and it is a **weak signal on purpose**: one new property is `low` and weighs 10, two or more in one
+sign-in are `medium` and weigh 20.
+
+How it avoids the obvious traps:
+- **No baseline, no finding.** Without at least `min_history_signins` (5) successful sign-ins over `min_history_days`
+  (3) distinct days inside `lookback_days` (30) the rule is silent, because with no history everything is new.
+- **One odd past sign-in does not whitelist a value.** A value is familiar after `min_seen` (2) sightings.
+- **Failed sign-ins never make anything familiar**, and only the first sighting of a value in the window is flagged.
+- **Each account has its own baseline**; another account's history does not leak. History is the account's own
+  earlier events, taken from before the window start (a value first seen after the window cannot whitelist it).
+
+Plumbing: `build_dossier` collects the target's earlier Entra sign-ins (and, for an IP pivot, those of every
+account seen on that IP) and passes them as `history` to baseline rules only. They are not part of the timeline.
+Host dossiers have no baseline.
+
+Honest limits: a business trip triggers it, and the sample data shows exactly that (`mkrawczyk` scores 10/100,
+LOW, for one sign-in from Berlin). There is no public dataset with per-account sign-in history, so this rule is
+validated on synthetic data only.
 
 ### Phishing triage
 

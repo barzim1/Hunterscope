@@ -5,8 +5,10 @@ Users, domains and hosts are fictional (`contoso.com`); IPs come from the RFC 57
 
 | User | Story | Expected |
 |---|---|---|
-| `jkowalski` | phishing email (`emails/phish_password_expiry.eml`) -> spraying -> MFA fatigue -> sign-in from Brazil -> forwarding rule + OAuth consent -> suspicious commands | CRITICAL |
+| `jkowalski` | phishing email (`emails/phish_password_expiry.eml`) -> spraying -> MFA fatigue -> sign-in from Brazil (a country new to him: eight earlier mornings in Warsaw form the baseline) -> forwarding rule + OAuth consent -> suspicious commands | CRITICAL |
 | `akowalska` | forgotten password (3 failures), flight Warsaw->London, `certutil -hashfile`, newsletter rule, legitimate newsletter email | 0 findings (false-positive fixtures) |
 | `bkowalczyk` | background noise | n/a |
+| `mkrawczyk` | ten ordinary days in Warsaw, then one sign-in from Berlin (a business trip) | LOW: a weak, expected false positive of the "new for this user" rule |
+| `mnowak` ... `sdabrowski` | one external IP tries each account once; one signs in (password spraying) | HIGH from the IP's point of view |
 
 Real-world datasets worth testing against next: OTRF Security-Datasets, EVTX-ATTACK-SAMPLES, Splunk attack_data.

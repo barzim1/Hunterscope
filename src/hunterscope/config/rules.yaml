@@ -39,6 +39,19 @@ rules:
     max_attempts_per_account: 3.0   # more than this on average is brute force, not spraying
     ignore_ips: []             # corporate egress / VPN / NAT addresses where many users share one IP
 
+  new_sign_in_properties:      # baseline: a sign-in country / client / application this account has not shown before
+    enabled: true
+    weight: 10                 # deliberately weak: a business trip looks the same
+    weight_multi: 20           # two or more unfamiliar properties in one sign-in
+    severity: low
+    tactic: initial-access
+    mitre: [T1078.004]
+    properties: [country, client_app, app]
+    lookback_days: 30
+    min_history_signins: 5     # below this there is no baseline and everything would be "new"
+    min_history_days: 3
+    min_seen: 2                # a value is familiar after this many sightings, so one odd past sign-in is not enough
+
   mfa_fatigue:
     enabled: true
     weight: 30

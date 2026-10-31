@@ -134,7 +134,7 @@ footer { margin-top: 48px; padding-top: 16px; border-top: 1px solid var(--line);
     <span class="chip sev-critical"><span class="g" aria-hidden="true">◆</span>CRITICAL</span>
   </div>
   <div class="kpis">
-    <div class="kpi"><div class="v">10</div><div class="l">Findings</div></div>
+    <div class="kpi"><div class="v">11</div><div class="l">Findings</div></div>
     <div class="kpi"><div class="v">5</div><div class="l">ATT&amp;CK tactics</div></div>
     <div class="kpi"><div class="v">22</div><div class="l">Events analysed</div></div>
     <div class="kpi"><div class="v">10</div><div class="l">Indicators</div></div>
@@ -143,7 +143,7 @@ footer { margin-top: 48px; padding-top: 16px; border-top: 1px solid var(--line);
 
 <h2>Tactics observed</h2>
 <div class="chain" role="list">
-<span class="step on" role="listitem">initial-access <span class="small muted">(3)</span></span><span class="step on" role="listitem">execution <span class="small muted">(3)</span></span><span class="step on" role="listitem">persistence <span class="small muted">(1)</span></span><span class="step" role="listitem">privilege-escalation</span><span class="step" role="listitem">defense-evasion</span><span class="step on" role="listitem">credential-access <span class="small muted">(2)</span></span><span class="step" role="listitem">discovery</span><span class="step" role="listitem">lateral-movement</span><span class="step on" role="listitem">collection <span class="small muted">(1)</span></span><span class="step" role="listitem">command-and-control</span><span class="step" role="listitem">exfiltration</span><span class="step" role="listitem">impact</span></div>
+<span class="step on" role="listitem">initial-access <span class="small muted">(4)</span></span><span class="step on" role="listitem">execution <span class="small muted">(3)</span></span><span class="step on" role="listitem">persistence <span class="small muted">(1)</span></span><span class="step" role="listitem">privilege-escalation</span><span class="step" role="listitem">defense-evasion</span><span class="step on" role="listitem">credential-access <span class="small muted">(2)</span></span><span class="step" role="listitem">discovery</span><span class="step" role="listitem">lateral-movement</span><span class="step on" role="listitem">collection <span class="small muted">(1)</span></span><span class="step" role="listitem">command-and-control</span><span class="step" role="listitem">exfiltration</span><span class="step" role="listitem">impact</span></div>
 
 <h2>Why this score</h2>
 <div class="tw"><table>
@@ -180,6 +180,10 @@ footer { margin-top: 48px; padding-top: 16px; border-top: 1px solid var(--line);
   <tr>
     <td><code>oauth_consent</code></td><td>persistence</td><td class="num">1</td>
     <td><div class="barcell" title="20 points"><div class="bar"><i style="width: 66.7%"></i></div><span class="num">20</span></div></td>
+  </tr>
+  <tr>
+    <td><code>new_sign_in_properties</code></td><td>initial-access</td><td class="num">1</td>
+    <td><div class="barcell" title="10 points"><div class="bar"><i style="width: 33.3%"></i></div><span class="num">10</span></div></td>
   </tr>
   <tr><td><em>multi-stage bonus</em><div class="small muted">multi-stage activity across 5 tactics: collection, credential-access, execution, initial-access, persistence</div></td><td></td><td></td>
     <td><div class="barcell" title="20 points"><div class="bar"><i style="width: 66.7%"></i></div><span class="num">20</span></div></td></tr>
@@ -269,6 +273,19 @@ footer { margin-top: 48px; padding-top: 16px; border-top: 1px solid var(--line);
   </table></div>
 </article>
 <article class="finding">
+  <header><span class="chip sev-low"><span class="g" aria-hidden="true">●</span>LOW</span><h3>Unfamiliar sign-in properties: country BR</h3><span class="when">2026-03-11 09:41:30 UTC</span></header>
+  <div class="tags">
+    <span class="chip plain">initial-access</span>
+<a class="chip plain" href="https://attack.mitre.org/techniques/T1078/004/" rel="noopener noreferrer">T1078.004</a>  </div>
+  <p>First sign-in in this window with a property not seen in this account&#39;s 10 earlier sign-ins over 10 days. Usual: country PL (10); client Browser (10); application Office 365 Exchange Online (10). A business trip or a new tool looks the same, so treat it as context for other findings, not as a verdict.</p>
+  <div class="tw"><table>
+    <thead><tr><th>Time (UTC)</th><th>Source</th><th>Action</th><th>Outcome</th><th>IP</th><th>Detail</th></tr></thead>
+    <tbody>
+    <tr><td class="mono nw">2026-03-11 09:41:30</td><td>entra</td><td>signin</td><td>success</td><td class="mono nw">203.0.113.50</td><td class="mono">Office 365 Exchange Online · Sao Paulo, BR · err 0 · Other.</td></tr>
+    </tbody>
+  </table></div>
+</article>
+<article class="finding">
   <header><span class="chip sev-high"><span class="g" aria-hidden="true">▲</span>HIGH</span><h3>Suspicious mailbox rule (New-InboxRule)</h3><span class="when">2026-03-11 09:55:12 UTC</span></header>
   <div class="tags">
     <span class="chip plain">collection</span>
@@ -344,6 +361,17 @@ footer { margin-top: 48px; padding-top: 16px; border-top: 1px solid var(--line);
   <dt>sha256</dt><dd><code>2329df5ad634e598833f6c4f6ed677325738d57d656aca0dea43c17cc2d7e443</code></dd>
   <dt>url</dt><dd><code>hxxp://198[.]51[.]100[.]200/login</code></dd>
 </dl>
+
+<h2>Other accounts from the same IPs</h2>
+<div class="tw"><table>
+  <thead><tr><th>Account</th><th>IP</th><th class="num">Failures</th><th class="num">Successes</th><th>First (UTC)</th><th>Last (UTC)</th></tr></thead>
+  <tbody>
+  <tr><td>ewrobel@contoso.com</td><td class="mono nw">192.0.2.10</td><td class="num">1</td><td class="num">1</td><td class="mono nw">2026-03-11 07:52:00</td><td class="mono nw">2026-03-11 07:53:30</td></tr>
+  <tr><td>jmazur@contoso.com</td><td class="mono nw">192.0.2.10</td><td class="num">1</td><td class="num">1</td><td class="mono nw">2026-03-11 07:50:00</td><td class="mono nw">2026-03-11 07:51:30</td></tr>
+  <tr><td>rkaczmarek@contoso.com</td><td class="mono nw">192.0.2.10</td><td class="num">1</td><td class="num">1</td><td class="mono nw">2026-03-11 07:51:00</td><td class="mono nw">2026-03-11 07:52:30</td></tr>
+  <tr><td>bkowalczyk@contoso.com</td><td class="mono nw">192.0.2.10</td><td class="num">0</td><td class="num">2</td><td class="mono nw">2026-03-10 14:02:00</td><td class="mono nw">2026-03-11 08:05:00</td></tr>
+  </tbody>
+</table></div>
 
 <h2>Timeline</h2>
 <p class="small muted">Rows marked <span class="chip flag">⚑ flagged</span> are evidence for at least one finding.</p>
@@ -441,7 +469,7 @@ footer { margin-top: 48px; padding-top: 16px; border-top: 1px solid var(--line);
   </tbody>
 </table></div>
 <footer>
-  Generated by HunterScope 0.1.0 · 2026-10-08 01:23:05 UTC · static report: no scripts, no external requests.
+  Generated by HunterScope 0.1.0 · 2026-10-31 19:21:49 UTC · static report: no scripts, no external requests.
 </footer>
 </main>
 </body>

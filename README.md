@@ -30,6 +30,7 @@ hunterscope triage -i data/samples -u jkowalski                       # terminal
 hunterscope triage -i data/samples -u jkowalski -f html -o dossier.html    # standalone HTML report
 hunterscope triage -i data/samples -u jkowalski --redact              # USER_A, EXT_EMAIL_1, ...
 hunterscope triage -i data/samples --ip 203.0.113.77                  # pivot on an address: every account seen from it
+hunterscope triage -i data/samples -H ws-jkowalski --sigma data/external/sigma   # + SigmaHQ rules (scripts/fetch_datasets.py sigma)
 hunterscope rules                                                     # rules and their ATT&CK mapping
 hunterscope explain 4688 certutil.exe 50126 T1003.001                 # what does this mean? (offline, Polish)
 hunterscope explain -i data/samples -u jkowalski -t 7d                # explain everything in a dossier
@@ -48,7 +49,7 @@ look-alike-but-benign activity must stay quiet. Example output without installin
 | | |
 |---|---|
 | **Ingest** | Entra ID sign-in logs, M365 Unified Audit Log, Windows Security and Sysmon (JSON), `.eml`. Directories are expanded; bad records are counted, not fatal. |
-| **Detect** | 11 rules: brute force that succeeded, password spraying across many accounts from one IP, MFA fatigue, impossible travel, off-hours logon, malicious inbox rules, OAuth consent, LSASS read access, LotL command lines, suspicious email, and *phish followed by a sign-in from an IP never seen before*. Thresholds and weights are YAML. |
+| **Detect** | 11 rules: brute force that succeeded, password spraying across many accounts from one IP, MFA fatigue, impossible travel, off-hours logon, malicious inbox rules, OAuth consent, LSASS read access, LotL command lines, suspicious email, and *phish followed by a sign-in from an IP never seen before*. Thresholds and weights are YAML. With `--sigma`, also the SigmaHQ Windows rules through a built-in Sigma evaluator (see below). |
 | **Score** | 0-100, and the report shows where every point came from: repeats count 25%, one rule is capped, multi-stage activity adds a bonus. |
 | **Redact** | Deterministic pseudonyms (`USER_A`, `INTERNAL_IP_1`); PESEL only with a valid checksum; optional HMAC mode so labels are stable and not reversible by brute force. |
 | **Cases** | SQLite store. Closing or escalating needs a written reason, closed cases are immutable, every change is an append-only audit entry. |
@@ -85,6 +86,31 @@ The sample is tiny: the 95% interval for the holdout result is 16-75%, so read t
 What it does support is that the rule generalised to two Mimikatz variants it was never tuned on. Full tables,
 every missed technique and the cost of the new rule are in [`docs/coverage.md`](docs/coverage.md).
 
+### Third-party rules: Sigma
+
+HunterScope's own Windows rules are few and hand-written, so I also ran the [SigmaHQ](https://github.com/SigmaHQ/sigma)
+Windows rules (1,988 of 2,425 evaluable by my small Sigma evaluator; the rest need log sources the datasets lack or
+unsupported features, all counted in the report) against the same datasets and the same dev/holdout split. The
+protocol was committed **before** the engine was written ([`docs/sigma-protocol.md`](docs/sigma-protocol.md)); the
+engine and field mapping were debugged on dev datasets only.
+
+| Same 17 in-scope datasets | Dev | Holdout | All |
+|---|---|---|---|
+| HunterScope's own rules | 5 / 10 | 3 / 7 | 8 / 17 |
+| SigmaHQ rules alone | 8 / 10 | 6 / 7 | 14 / 17 |
+| Both together | 8 / 10 | 6 / 7 | 14 / 17 |
+
+Requiring the exact sub-technique instead of the same ATT&CK family (a check I added after seeing the first result,
+and said so in the protocol): 7 / 17 vs 13 / 17 overall, 2 / 7 vs 5 / 7 in the holdout. On the wider set of 91
+datasets whose labels some Sigma rule covers: 10% vs 68% (59% exact). That wider comparison favours Sigma by
+construction, since HunterScope has no rule for most of those techniques.
+
+What I take from it: on Windows telemetry my own rules add **nothing** beyond Sigma (the union equals Sigma alone in
+every row), so Sigma is the Windows detection layer now (`triage --sigma`) and HunterScope's own rules are kept for
+what Sigma does not do: identity, phishing and cross-account correlation. What it does not show: about 60% of the
+(dataset, rule) matches are off-label, which is a noise signal and not a false-positive rate (no benign baseline;
+the single benign sample user stays at 0 with the real SigmaHQ rules, which is one data point, not a measurement).
+
 Running real data through it also found bugs the synthetic data could not: older exports use `EventTime` instead of
 `TimeCreated` (whole datasets were silently parsed as empty), and for logon events 4624/4625 I was reading the
 machine account instead of the target user. Both are fixed and covered by tests.
@@ -112,6 +138,9 @@ machine account instead of the target user. Both are fixed and covered by tests.
 - **The cross-account spray rule is validated on synthetic scenarios only.** It produced no finding on the one public
   labelled spray dataset (in the holdout, deliberately not inspected, so the reason is unknown), and the dev half has
   only 14 failed logons in 52 datasets, too few to test it.
+- **The Sigma evaluator is my own implementation**, tested against the Sigma specification and on 1,988 real rules,
+  but not cross-checked against pySigma. Records need `Channel` and `EventID` to be classified. SigmaHQ rules are
+  fetched (Detection Rule License 1.1), never committed.
 - `lsass_access` needs Sysmon EventID 10 for lsass, which many production configurations filter out; its allowlist
   is a starting point, not a universal one.
 - Single-analyst SQLite on a local disk, offline files only (no live SIEM client), not hardened for production.

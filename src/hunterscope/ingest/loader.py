@@ -12,7 +12,7 @@ from typing import Any
 from pydantic import ValidationError
 
 from hunterscope.ingest.eml import parse_eml
-from hunterscope.ingest.parsers import PARSERS, detect_source
+from hunterscope.ingest.parsers import PARSERS, detect_source, parse_windows
 from hunterscope.models import Event
 
 
@@ -60,7 +60,8 @@ def expand_paths(paths: Iterable[Path]) -> list[Path]:
     return out
 
 
-def load_events(paths: Iterable[Path]) -> LoadResult:
+def load_events(paths: Iterable[Path], keep_raw: bool = False) -> LoadResult:
+    """`keep_raw` retains each Windows record on its Event (needed by Sigma; costs memory on big exports)."""
     result = LoadResult()
     for path in expand_paths(paths):
         if path.suffix.lower() == ".eml":
@@ -78,7 +79,10 @@ def load_events(paths: Iterable[Path]) -> LoadResult:
                 result.skipped += 1
                 continue
             try:
-                event = PARSERS[source](rec)
+                if keep_raw and source == "windows":
+                    event = parse_windows(rec, keep_raw=True)
+                else:
+                    event = PARSERS[source](rec)
             except (KeyError, ValueError, TypeError, ValidationError):
                 result.skipped += 1
                 continue

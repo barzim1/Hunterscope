@@ -7,7 +7,7 @@ import os
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
 
 import typer
 import yaml
@@ -74,6 +74,19 @@ def _resolve_anchor(anchor: str) -> datetime | None:
     return _parse_timestamp(anchor, "--anchor")
 
 
+def _load_sigma(path: Path) -> Any:
+    from hunterscope.sigma import load_ruleset
+
+    rules_dir = path / "rules" / "windows" if (path / "rules" / "windows").is_dir() else path
+    ruleset = load_ruleset(rules_dir)
+    if not len(ruleset):
+        err.print(f"[red]No usable Sigma rules under {rules_dir}[/red]")
+        raise typer.Exit(2)
+    st = ruleset.stats
+    err.print(f"Sigma: {len(ruleset)} rules loaded ({st.eligible - st.loaded} eligible rules not evaluable here).")
+    return ruleset
+
+
 def _redactor(redactor_config: Path | None, key_env: str | None, users: list[str], hosts: list[str],
               overrides: dict[str, object] | None = None) -> Redactor:
     key = None
@@ -117,6 +130,8 @@ def triage(
     save: Annotated[bool, typer.Option("--save", help="Record/update a case in the case DB")] = False,
     db: DbOpt = None,
     author: AuthorOpt = None,
+    sigma: Annotated[Path | None, typer.Option(exists=True, file_okay=False,
+                                               help="SigmaHQ rules (checkout or rules/windows): add Sigma findings")] = None,
 ) -> None:
     """Build an investigation dossier for a user, a host or an IP address."""
     if sum(x is not None for x in (user, host, ip)) != 1:
@@ -134,12 +149,13 @@ def triage(
         raise typer.BadParameter(str(exc)) from exc
 
     cfg = load_rules_config(config)
-    loaded = load_events(inputs)
+    ruleset = _load_sigma(sigma) if sigma else None
+    loaded = load_events(inputs, keep_raw=ruleset is not None)
     kind, target = ("user", user) if user else ("ip", ip) if ip else ("host", host or "")
     try:
         dossier = build_dossier(
             loaded.events, kind, target or "", window, cfg,
-            anchor=_resolve_anchor(anchor), skipped=loaded.skipped,
+            anchor=_resolve_anchor(anchor), skipped=loaded.skipped, sigma=ruleset,
         )
     except LookupError as exc:
         err.print(f"[red]{exc}[/red]")

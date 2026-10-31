@@ -28,6 +28,8 @@ class Event(BaseModel):
     error_code: int | None = None
     command_line: str | None = None
     detail: dict[str, Any] = Field(default_factory=dict)
+    # Original record, kept only when a detection needs it (Sigma matches on the source field names).
+    raw: dict[str, Any] | None = Field(default=None, exclude=True, repr=False)
 
     @field_validator("ts")
     @classmethod

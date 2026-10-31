@@ -122,6 +122,141 @@ Labels are per **tactic folder only**, so this is the share of sample files on w
 | Lateral Movement | 47 | 0 | 3 | 6% | lotl_commandline (3) |
 | Command and Control | 6 | 0 | 0 | 0% |  |
 
+
+## Sigma: third-party rules on the same datasets @ SigmaHQ `05d1031`
+
+Protocol fixed before measuring: [`sigma-protocol.md`](sigma-protocol.md). The Sigma rules were written by other people who never saw these datasets, so they cannot be overfitted by me; what could go wrong is my engine and field mapping, which were debugged on dev datasets only. Holdout appears only in this report.
+
+- Rules in the directory: **2,425**; inside the pre-registered filter (status stable/test/experimental, level medium or higher, product windows): **2,260**.
+- Loaded and evaluated: **1,988**. Not evaluated: **265** for a log source the datasets do not contain (e.g. PowerShell script blocks) and **7** using an unsupported Sigma feature (keyword selection: 4, modifier fieldref: 3).
+- Records scanned: **751,712**.
+
+### A. The datasets HunterScope's own rules were in scope for
+
+Same denominator as the table above, so the numbers are directly comparable.
+
+| Split | Datasets | HunterScope rules | Sigma alone | Union |
+|---|---:|---|---|---|
+| dev | 10 | 5 / 10 (50%, CI 24%-76%) | 8 / 10 (80%, CI 49%-94%) | 8 / 10 (80%, CI 49%-94%) |
+| holdout | 7 | 3 / 7 (43%, CI 16%-75%) | 6 / 7 (86%, CI 49%-97%) | 6 / 7 (86%, CI 49%-97%) |
+| all | 17 | 8 / 17 (47%, CI 26%-69%) | 14 / 17 (82%, CI 59%-94%) | 14 / 17 (82%, CI 59%-94%) |
+
+### B. Every dataset labelled with a technique some loaded Sigma rule is tagged with
+
+Chosen from rule tags alone, without looking at telemetry. A wider denominator: HunterScope has no rule for many of these techniques.
+
+| Split | Datasets | HunterScope rules | Sigma alone | Union |
+|---|---:|---|---|---|
+| dev | 47 | 6 / 47 (13%, CI 6%-25%) | 35 / 47 (74%, CI 60%-85%) | 35 / 47 (74%, CI 60%-85%) |
+| holdout | 44 | 3 / 44 (7%, CI 2%-18%) | 27 / 44 (61%, CI 47%-74%) | 27 / 44 (61%, CI 47%-74%) |
+| all | 91 | 9 / 91 (10%, CI 5%-18%) | 62 / 91 (68%, CI 58%-77%) | 62 / 91 (68%, CI 58%-77%) |
+
+### Stricter check: exact sub-technique (added after the first run)
+
+The tables above credit a finding in the same ATT&CK *family* (a T1003.001 finding counts for a T1003.002 label), as the rest of this report does. This repeats A and B requiring the exact sub-technique. It was added after seeing the family-level result, as a robustness check; the headline above was not changed.
+
+**A**
+
+| Split | Datasets | HunterScope rules | Sigma alone | Union |
+|---|---:|---|---|---|
+| dev | 10 | 5 / 10 (50%, CI 24%-76%) | 8 / 10 (80%, CI 49%-94%) | 8 / 10 (80%, CI 49%-94%) |
+| holdout | 7 | 2 / 7 (29%, CI 8%-64%) | 5 / 7 (71%, CI 36%-92%) | 5 / 7 (71%, CI 36%-92%) |
+| all | 17 | 7 / 17 (41%, CI 22%-64%) | 13 / 17 (76%, CI 53%-90%) | 13 / 17 (76%, CI 53%-90%) |
+
+**B**
+
+| Split | Datasets | HunterScope rules | Sigma alone | Union |
+|---|---:|---|---|---|
+| dev | 47 | 5 / 47 (11%, CI 5%-23%) | 32 / 47 (68%, CI 54%-80%) | 32 / 47 (68%, CI 54%-80%) |
+| holdout | 44 | 2 / 44 (5%, CI 1%-15%) | 22 / 44 (50%, CI 36%-64%) | 22 / 44 (50%, CI 36%-64%) |
+| all | 91 | 7 / 91 (8%, CI 4%-15%) | 54 / 91 (59%, CI 49%-69%) | 54 / 91 (59%, CI 49%-69%) |
+
+Datasets only Sigma caught (53): SDWIN-190301174830 (holdout: Empire DCSync); SDWIN-190319023812 (holdout: Empire Userland Registry Run Keys); SDWIN-190319024742 (dev: Empire Userland Scheduled Tasks); SDWIN-190319131123 (holdout: Empire Over-Pass-The-Hash); SDWIN-190319145126 (dev: Rubeus Userland ASKTGT PTT); SDWIN-190403133337 (dev: IKEEXT Remote Service DLL Hijack); SDWIN-190518184306 (holdout: Empire Elevated WMI Eventing); SDWIN-190518200432 (dev: Empire PSInject); SDWIN-190518210125 (dev: Empire Invoke SMBExec); SDWIN-190518210652 (dev: Empire Invoke PsExec); SDWIN-190518211456 (dev: Empire Invoke PSRemoting); SDWIN-190518213907 (dev: Empire Invoke Execute MSBuild); SDWIN-190518221344 (dev: Empire Invoke DLLInjection); SDWIN-190518235535 (dev: Empire Mimikatz Backup Keys); SDWIN-190625133822 (holdout: Empire Reg Dump SAM Hive); SDWIN-191027223020 (holdout: Covenant ShellCmd InstallUtil); SDWIN-191225045202 (holdout: Empire Invoke InternalMonologue); SDWIN-200609225055 (dev: MSF Record Mic); SDWIN-200721232741 (holdout: Empire Regsvr32 Execution); SDWIN-200722001847 (dev: Empire Elevated Registry Run Keys); SDWIN-200724174200 (holdout: Covenant Remote WMI Eventing ActiveScrip); SDWIN-200805020926 (dev: Covenant DCSync); SDWIN-200806015757 (holdout: Covenant Remote File Copy); SDWIN-200806030120 (holdout: Covenant SharpSC Start); SDWIN-200806035621 (dev: Covenant SharpWMI Exec) ....
+
+### Noise signal (not precision)
+
+A (dataset, rule) pair is *off-label* when the rule matched but none of its ATT&CK families is a label of that dataset. The labs run ancillary tooling, so this is not a false-positive rate; there is no benign baseline here.
+
+| Split | (dataset, rule) pairs | Off-label | Rule without ATT&CK tag |
+|---|---:|---:|---:|
+| dev | 242 | 140 (58%) | 15 |
+| holdout | 187 | 114 (61%) | 11 |
+
+Rules that were off-label in the most datasets:
+
+| Rule | Level | Datasets |
+|---|---|---:|
+| PowerShell Core DLL Loaded By Non PowerShell Process | medium | 12 |
+| Suspicious Execution of Powershell with Base64 | medium | 11 |
+| Password Policy Enumerated | medium | 10 |
+| Net WebClient Casing Anomalies | high | 10 |
+| Potentially Suspicious AccessMask Requested From LSASS | medium | 10 |
+| Suspicious WSMAN Provider Image Loads | medium | 9 |
+| Alternate PowerShell Hosts Pipe | medium | 9 |
+| HackTool - Empire PowerShell Launch Parameters | high | 9 |
+| Elevated System Shell Spawned From Uncommon Parent Location | medium | 6 |
+| Suspicious SYSTEM User Process Creation | high | 6 |
+
+### Per technique (every label, with or without a HunterScope rule)
+
+| Technique | Datasets | HunterScope | Sigma | Union |
+|---|---:|---:|---:|---:|
+| [T1021.002](https://attack.mitre.org/techniques/T1021/002/) | 7 | 0 | 3 | 3 |
+| [T1047](https://attack.mitre.org/techniques/T1047/) | 6 | 0 | 6 | 6 |
+| [T1562.002](https://attack.mitre.org/techniques/T1562/002/) | 6 | 0 | 0 | 0 |
+| [T1003.001](https://attack.mitre.org/techniques/T1003/001/) | 5 | 5 | 5 | 5 |
+| [T1003.002](https://attack.mitre.org/techniques/T1003/002/) | 4 | 1 | 3 | 3 |
+| [T1003.003](https://attack.mitre.org/techniques/T1003/003/) | 4 | 0 | 3 | 3 |
+| [T1021.003](https://attack.mitre.org/techniques/T1021/003/) | 4 | 0 | 1 | 1 |
+| [T1053.005](https://attack.mitre.org/techniques/T1053/005/) | 4 | 0 | 3 | 3 |
+| [T1021.006](https://attack.mitre.org/techniques/T1021/006/) | 3 | 0 | 3 | 3 |
+| [T1055](https://attack.mitre.org/techniques/T1055/) | 3 | 0 | 1 | 1 |
+| [T1112](https://attack.mitre.org/techniques/T1112/) | 3 | 0 | 1 | 1 |
+| [T1218.005](https://attack.mitre.org/techniques/T1218/005/) | 3 | 1 | 3 | 3 |
+| [T1003.004](https://attack.mitre.org/techniques/T1003/004/) | 2 | 0 | 1 | 1 |
+| [T1003.006](https://attack.mitre.org/techniques/T1003/006/) | 2 | 0 | 2 | 2 |
+| [T1059](https://attack.mitre.org/techniques/T1059/) | 2 | 0 | 1 | 1 |
+| [T1069.001](https://attack.mitre.org/techniques/T1069/001/) | 2 | 0 | 0 | 0 |
+| [T1069.002](https://attack.mitre.org/techniques/T1069/002/) | 2 | 0 | 0 | 0 |
+| [T1218](https://attack.mitre.org/techniques/T1218/) | 2 | 0 | 1 | 1 |
+| [T1547.001](https://attack.mitre.org/techniques/T1547/001/) | 2 | 0 | 2 | 2 |
+| [T1003](https://attack.mitre.org/techniques/T1003/) | 1 | 0 | 1 | 1 |
+| [T1012](https://attack.mitre.org/techniques/T1012/) | 1 | 0 | 0 | 0 |
+| [T1021](https://attack.mitre.org/techniques/T1021/) | 1 | 0 | 1 | 1 |
+| [T1037.001](https://attack.mitre.org/techniques/T1037/001/) | 1 | 0 | 1 | 1 |
+| [T1049](https://attack.mitre.org/techniques/T1049/) | 1 | 0 | 0 | 0 |
+| [T1055.001](https://attack.mitre.org/techniques/T1055/001/) | 1 | 0 | 1 | 1 |
+| [T1055.002](https://attack.mitre.org/techniques/T1055/002/) | 1 | 0 | 1 | 1 |
+| [T1055.003](https://attack.mitre.org/techniques/T1055/003/) | 1 | 0 | 1 | 1 |
+| [T1056.002](https://attack.mitre.org/techniques/T1056/002/) | 1 | 0 | 0 | 0 |
+| [T1059.001](https://attack.mitre.org/techniques/T1059/001/) | 1 | 0 | 0 | 0 |
+| [T1059.005](https://attack.mitre.org/techniques/T1059/005/) | 1 | 1 | 1 | 1 |
+| [T1087.001](https://attack.mitre.org/techniques/T1087/001/) | 1 | 0 | 0 | 0 |
+| [T1087.002](https://attack.mitre.org/techniques/T1087/002/) | 1 | 0 | 0 | 0 |
+| [T1110.003](https://attack.mitre.org/techniques/T1110/003/) | 1 | 0 | 0 | 0 |
+| [T1123](https://attack.mitre.org/techniques/T1123/) | 1 | 0 | 1 | 1 |
+| [T1134.001](https://attack.mitre.org/techniques/T1134/001/) | 1 | 0 | 1 | 1 |
+| [T1134.002](https://attack.mitre.org/techniques/T1134/002/) | 1 | 0 | 1 | 1 |
+| [T1135](https://attack.mitre.org/techniques/T1135/) | 1 | 0 | 0 | 0 |
+| [T1197](https://attack.mitre.org/techniques/T1197/) | 1 | 1 | 1 | 1 |
+| [T1210](https://attack.mitre.org/techniques/T1210/) | 1 | 0 | 0 | 0 |
+| [T1218.001](https://attack.mitre.org/techniques/T1218/001/) | 1 | 0 | 1 | 1 |
+| [T1218.002](https://attack.mitre.org/techniques/T1218/002/) | 1 | 0 | 1 | 1 |
+| [T1218.003](https://attack.mitre.org/techniques/T1218/003/) | 1 | 0 | 1 | 1 |
+| [T1218.004](https://attack.mitre.org/techniques/T1218/004/) | 1 | 0 | 1 | 1 |
+| [T1218.010](https://attack.mitre.org/techniques/T1218/010/) | 1 | 0 | 1 | 1 |
+| [T1220](https://attack.mitre.org/techniques/T1220/) | 1 | 0 | 1 | 1 |
+| [T1222.001](https://attack.mitre.org/techniques/T1222/001/) | 1 | 0 | 0 | 0 |
+| [T1505.003](https://attack.mitre.org/techniques/T1505/003/) | 1 | 0 | 1 | 1 |
+| [T1518](https://attack.mitre.org/techniques/T1518/) | 1 | 0 | 1 | 1 |
+| [T1543.003](https://attack.mitre.org/techniques/T1543/003/) | 1 | 0 | 1 | 1 |
+| [T1546.003](https://attack.mitre.org/techniques/T1546/003/) | 1 | 0 | 1 | 1 |
+| [T1548.002](https://attack.mitre.org/techniques/T1548/002/) | 1 | 0 | 1 | 1 |
+| [T1550.002](https://attack.mitre.org/techniques/T1550/002/) | 1 | 0 | 1 | 1 |
+| [T1558.003](https://attack.mitre.org/techniques/T1558/003/) | 1 | 0 | 1 | 1 |
+| [T1562.004](https://attack.mitre.org/techniques/T1562/004/) | 1 | 0 | 0 | 0 |
+| [T1574.001](https://attack.mitre.org/techniques/T1574/001/) | 1 | 0 | 1 | 1 |
+
 ## How to read this
 
 - **Scope is deliberate.** HunterScope is an identity/phishing triage tool with a thin Windows layer (command-line patterns and logon correlation). It is not an EDR; low recall on injection, persistence or lateral-movement techniques is expected and shown, not hidden.

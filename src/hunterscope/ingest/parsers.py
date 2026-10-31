@@ -108,7 +108,7 @@ def _win_user(rec: dict[str, Any], event_id: int) -> str | None:
     return f"{domain}\\{name}" if domain and domain != "-" else str(name)
 
 
-def parse_windows(rec: dict[str, Any]) -> Event:
+def _parse_windows(rec: dict[str, Any]) -> Event:
     """Windows Security / Sysmon event as flat JSON (Winlogbeat/WEF/OTRF style)."""
     event_id = int(rec["EventID"])
     base: dict[str, Any] = {
@@ -142,6 +142,13 @@ def parse_windows(rec: dict[str, Any]) -> Event:
     if event_id in _WIN_GROUP_IDS:
         return Event(**base, action="group_add", outcome="success")
     return Event(**base, action=f"event_{event_id}", outcome="unknown")
+
+
+def parse_windows(rec: dict[str, Any], keep_raw: bool = False) -> Event:
+    event = _parse_windows(rec)
+    if keep_raw:
+        event.raw = rec
+    return event
 
 
 def detect_source(rec: dict[str, Any]) -> str | None:

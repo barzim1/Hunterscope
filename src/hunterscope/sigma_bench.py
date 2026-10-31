@@ -86,14 +86,19 @@ def _hit(labels: list[str], got: set[str]) -> bool:
     return any(cov.family_hit(t, got) for t in labels)
 
 
+def _hit_exact(labels: list[str], got: set[str]) -> bool:
+    """Stricter: a label T1003.002 needs a finding tagged T1003.002 (a parent label accepts any sub-technique)."""
+    return any(cov.exact_hit(t, got) for t in labels)
+
+
 def compare(pairs: list[tuple[cov.DatasetResult, SigmaDatasetResult]],
-            subset: Callable[[cov.Dataset], bool]) -> list[Compare]:
+            subset: Callable[[cov.Dataset], bool], hit: Callable[[list[str], set[str]], bool] = _hit) -> list[Compare]:
     rows = []
     for name in ("dev", "holdout", "all"):
         chosen = [(h, s) for h, s in pairs if subset(h.dataset) and (name == "all" or h.split == name)]
-        hs = sum(_hit(h.dataset.techniques, h.got) for h, _ in chosen)
-        sg = sum(_hit(s.dataset.techniques, s.got) for _, s in chosen)
-        un = sum(_hit(h.dataset.techniques, h.got | s.got) for h, s in chosen)
+        hs = sum(hit(h.dataset.techniques, h.got) for h, _ in chosen)
+        sg = sum(hit(s.dataset.techniques, s.got) for _, s in chosen)
+        un = sum(hit(h.dataset.techniques, h.got | s.got) for h, s in chosen)
         rows.append(Compare(name, len(chosen), hs, sg, un))
     return rows
 
@@ -142,6 +147,14 @@ def render_sigma(ruleset: RuleSet, results: list[SigmaDatasetResult], hs_results
         "rule for many of these techniques.", "",
         *_table(compare(pairs, sigma_scope)),
     ]
+
+    out += ["", "### Stricter check: exact sub-technique (added after the first run)", "",
+            "The tables above credit a finding in the same ATT&CK *family* (a T1003.001 finding counts for a "
+            "T1003.002 label), as the rest of this report does. This repeats A and B requiring the exact "
+            "sub-technique. It was added after seeing the family-level result, as a robustness check; the "
+            "headline above was not changed.", "",
+            "**A**", "", *_table(compare(pairs, in_scope, _hit_exact)),
+            "", "**B**", "", *_table(compare(pairs, sigma_scope, _hit_exact))]
 
     gained = [(h, s) for h, s in pairs if sigma_scope(h.dataset) and _hit(s.dataset.techniques, s.got)
               and not _hit(h.dataset.techniques, h.got)]

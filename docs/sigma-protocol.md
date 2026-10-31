@@ -44,3 +44,11 @@ never saw these datasets, add?
 
 - Union no better than HunterScope alone on the holdout in metric A.
 - More than a handful of rules firing on most datasets (a sign of an engine bug, e.g. a wildcard matching everything).
+
+## Amendment (written after the first result was seen)
+
+The first run showed Sigma alone catching more datasets than HunterScope's rules, with the union equal to Sigma
+alone. Because the family-level hit definition is generous (a T1003.001 finding credits a T1003.002 label), a
+stricter exact-sub-technique table was added to the report as a robustness check. The headline tables, the rule
+filter and the field mapping were not changed after seeing the result. Not done: restricting to high/critical rules,
+or any per-rule tuning.

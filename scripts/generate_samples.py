@@ -7,6 +7,8 @@ Scenario (all hosts/users/IPs are fictional; IPs are RFC 5737 documentation rang
   akowalska : benign look-alikes (forgotten password, flight Warsaw->London, admin tooling,
               newsletter inbox rule). Must NOT alert; used as false-positive fixtures.
   bkowalczyk: background noise.
+  7 accounts + 1 : one external IP sprays them once each; one signs in (cross-account rule). 3 more mistype
+              behind the corporate NAT (benign, below threshold).
 """
 
 from __future__ import annotations
@@ -93,6 +95,19 @@ def build():
             "C:\\Windows\\System32\\certutil.exe"),
         win(t(11, 10, 40, 0), host, nt, 1, "notepad.exe C:\\Users\\jkowalski\\notes.txt", "C:\\Windows\\notepad.exe"),
     ]
+
+    # --- password spraying: one IP, seven accounts, one attempt each; one account then signs in ---
+    # No single account shows more than one failure, so only a rule that looks across accounts sees it.
+    SPRAY, AMS = "203.0.113.77", ("Amsterdam", "NL", 52.3676, 4.9041)
+    victims = ["mnowak", "pwisniewski", "kzajac", "awojcik", "tkrol", "mlewandowski", "sdabrowski"]
+    for i, name in enumerate(victims):
+        entra_logs.append(entra(t(11, 3, 10 + 2 * i), f"{name}@contoso.com", SPRAY, 50126, AMS))
+    entra_logs.append(entra(t(11, 3, 31), "tkrol@contoso.com", SPRAY, 0, AMS))
+
+    # Benign look-alike: three users mistype once behind the corporate NAT. Below the threshold, must stay quiet.
+    for i, name in enumerate(["jmazur", "rkaczmarek", "ewrobel"]):
+        entra_logs.append(entra(t(11, 7, 50 + i, 0), f"{name}@contoso.com", CORP, 50126, WAW))
+        entra_logs.append(entra(t(11, 7, 51 + i, 30), f"{name}@contoso.com", CORP, 0, WAW))
 
     # --- akowalska: benign look-alikes ---
     entra_logs.append(entra(t(10, 8, 0), A, CORP, 0, WAW))

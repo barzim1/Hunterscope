@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import math
 import re
-from collections import defaultdict
+from collections import Counter, defaultdict
 from collections.abc import Callable
 from datetime import timedelta
 from typing import Any
@@ -19,6 +19,10 @@ from hunterscope.models import Event, Finding, user_key
 RuleFn = Callable[[list[Event], dict[str, Any], str], list[Finding]]
 RULES: dict[str, RuleFn] = {}
 
+# Cross-entity rules see the target's events AND events of other accounts that share an IP with it.
+CrossRuleFn = Callable[[list[Event], list[Event], dict[str, Any], str], list[Finding]]
+CROSS_RULES: dict[str, CrossRuleFn] = {}
+
 CRED_FAILURE_CODES = {50126}
 EMAIL_RE = re.compile(r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}")
 
@@ -26,6 +30,14 @@ EMAIL_RE = re.compile(r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}")
 def rule(name: str) -> Callable[[RuleFn], RuleFn]:
     def register(fn: RuleFn) -> RuleFn:
         RULES[name] = fn
+        return fn
+
+    return register
+
+
+def cross_rule(name: str) -> Callable[[CrossRuleFn], CrossRuleFn]:
+    def register(fn: CrossRuleFn) -> CrossRuleFn:
+        CROSS_RULES[name] = fn
         return fn
 
     return register
@@ -40,6 +52,7 @@ def _finding(
     iocs: list[tuple[str, str]] | None = None,
     severity: str | None = None,
     extra_mitre: list[str] | None = None,
+    weight: float | None = None,
 ) -> Finding:
     mitre = list(dict.fromkeys([*cfg["mitre"], *(extra_mitre or [])]))
     return Finding(
@@ -48,7 +61,7 @@ def _finding(
         severity=severity or cfg["severity"],
         tactic=cfg["tactic"],
         mitre=mitre,
-        weight=float(cfg["weight"]),
+        weight=float(cfg["weight"] if weight is None else weight),
         description=description,
         evidence=evidence,
         iocs=iocs or [],
@@ -90,6 +103,75 @@ def failures_then_success(events: list[Event], cfg: dict[str, Any], rid: str) ->
                     )
                 )
             recent[key].clear()
+    return out
+
+
+@cross_rule("password_spray_ip")
+def password_spray_ip(
+    events: list[Event], context: list[Event], cfg: dict[str, Any], rid: str
+) -> list[Finding]:
+    """One IP, many accounts, few attempts each. `failures_then_success` is keyed by (user, ip) and so
+    cannot see this: a real spray tries one password per account precisely to stay under per-user limits."""
+    window = timedelta(minutes=cfg["window_minutes"])
+    ignored = set(cfg.get("ignore_ips", []))
+    seen: set[int] = set()
+    pool: list[Event] = []
+    for e in sorted([*events, *context], key=lambda x: x.ts):
+        if id(e) not in seen and e.ip and e.ip not in ignored and user_key(e.user):
+            seen.add(id(e))
+            pool.append(e)
+
+    failures: dict[str, list[Event]] = defaultdict(list)
+    successes: dict[str, list[Event]] = defaultdict(list)
+    for e in pool:
+        if _is_cred_failure(e):
+            failures[str(e.ip)].append(e)
+        elif _is_auth(e) and e.outcome == "success":
+            successes[str(e.ip)].append(e)
+
+    out: list[Finding] = []
+    for ip, fails in failures.items():
+        counts: Counter[str] = Counter()
+        lo = 0
+        best = (0, 0, 0)  # distinct accounts, window start, window end (inclusive)
+        for hi, e in enumerate(fails):
+            counts[user_key(e.user)] += 1
+            while e.ts - fails[lo].ts > window:
+                gone = user_key(fails[lo].user)
+                counts[gone] -= 1
+                if not counts[gone]:
+                    del counts[gone]
+                lo += 1
+            # Most accounts wins; on a tie take the longest window, so the attempts-per-account guard below
+            # judges the whole burst and not just the moment the last account was first touched.
+            if len(counts) > best[0] or (len(counts) == best[0] and hi - lo > best[2] - best[1]):
+                best = (len(counts), lo, hi)
+        accounts, first, last = best
+        if accounts < cfg["min_accounts"]:
+            continue
+        burst = fails[first : last + 1]
+        if len(burst) / accounts > cfg["max_attempts_per_account"]:
+            continue  # many tries per account is brute force, handled per user
+        targeted = {user_key(f.user) for f in burst}
+        signed_in = [
+            s for s in successes.get(ip, [])
+            if burst[0].ts <= s.ts <= burst[-1].ts + window and user_key(s.user) in targeted
+        ]
+        title = f"Password spraying from {ip}: {accounts} accounts targeted"
+        desc = (f"{len(burst)} failed credential attempts against {accounts} different accounts from {ip} "
+                f"within {cfg['window_minutes']} min ({len(burst) / accounts:.1f} per account).")
+        if signed_in:
+            names = ", ".join(sorted({str(s.user) for s in signed_in}))
+            title += f", {len({user_key(s.user) for s in signed_in})} signed in afterwards"
+            desc += f" Successful sign-in from the same IP: {names}."
+        out.append(
+            _finding(
+                rid, cfg, title, desc, [*burst, *signed_in],
+                iocs=[("ip", ip), *(("account", str(s.user)) for s in signed_in)],
+                severity="high" if signed_in else "medium",
+                weight=cfg["weight_signed_in"] if signed_in else None,
+            )
+        )
     return out
 
 

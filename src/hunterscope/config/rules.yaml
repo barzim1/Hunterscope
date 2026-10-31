@@ -23,6 +23,18 @@ rules:
     threshold: 5
     window_minutes: 30
 
+  password_spray_ip:           # cross-entity: one IP, many accounts, few attempts each
+    enabled: true
+    weight: 30
+    weight_signed_in: 45       # heavier when an attacked account then signed in from the same IP
+    severity: medium           # high when an attacked account signed in afterwards
+    tactic: credential-access
+    mitre: [T1110.003]
+    min_accounts: 5            # distinct accounts failing from one IP inside the window
+    window_minutes: 60
+    max_attempts_per_account: 3.0   # more than this on average is brute force, not spraying
+    ignore_ips: []             # corporate egress / VPN / NAT addresses where many users share one IP
+
   mfa_fatigue:
     enabled: true
     weight: 30

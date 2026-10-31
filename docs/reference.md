@@ -71,12 +71,40 @@ Rebuild the examples and screenshots (deterministic, synthetic): `pip install -e
 | suspicious_inbox_rule | collection | T1114.003, T1564.008 |
 | oauth_consent | persistence | T1528 |
 | lsass_access | credential-access | T1003.001 |
+| password_spray_ip (cross-account) | credential-access | T1110.003 |
 | lotl_commandline | execution | T1059 (+ per pattern: T1027, T1105, T1003.001, T1033, T1490, ...) |
 | suspicious_email | initial-access | T1566.001, T1566.002 |
 | phish_then_new_signin (meta rule) | initial-access | T1566, T1078 |
 
 Thresholds, weights and patterns are YAML, overridable with `--config`. Every rule ships with positive **and**
 benign tests (flight vs impossible travel, 4 vs 5 failures, `certutil -hashfile` vs `-urlcache`).
+
+### Cross-account detection and the IP pivot
+
+Per-user rules cannot see a password spray: it tries one password per account on purpose, so no single account
+shows more than one failure. `password_spray_ip` looks across accounts instead. Within a sliding window
+(`window_minutes`, default 60) it counts the distinct accounts failing a credential check from one IP; at
+`min_accounts` (default 5) it fires, unless the window averages more than `max_attempts_per_account` (default 3.0)
+attempts per account, which is brute force and is left to `failures_then_success`. If an attacked account then signs
+in from the same IP the finding is `high` and weighs `weight_signed_in` (45) instead of `weight` (30), and the
+account is listed as an IOC.
+
+How a single-user dossier can see other accounts: `build_dossier` collects the events of *other* accounts that share
+an IP with the target inside the window and hands them to cross-entity rules only as `context`. Every per-user rule
+keeps judging the target's own events alone (a test pins this). The dossier also lists those accounts under
+"Other accounts from the same IPs".
+
+`hunterscope triage --ip 203.0.113.77` pivots the other way: the target is the address, the timeline is everything
+seen from it, and the table lists every account with failure and success counts. `--save` keeps an IP case separate
+from the cases of the users involved.
+
+Tuning: `ignore_ips` silences a shared corporate egress, VPN or NAT address where many users legitimately fail
+together. The sample data has a benign case (three users mistype once behind the corporate NAT, below threshold).
+The window picked for the per-account guard is the longest one with the most accounts, not the first moment the
+count is reached.
+
+Validation: synthetic scenarios and adversarial unit tests only. On the public datasets it produced no finding (see
+`coverage.md`); the one labelled spray dataset is in the holdout and was not inspected.
 
 ### Phishing triage
 

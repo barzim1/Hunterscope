@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import getpass
+import ipaddress
 import json
 import os
 import sys
@@ -103,6 +104,7 @@ def triage(
     ],
     user: Annotated[str | None, typer.Option("--user", "-u", help="UPN, sAMAccountName or DOMAIN\\user")] = None,
     host: Annotated[str | None, typer.Option("--host", "-H", help="Hostname (FQDN suffix ignored)")] = None,
+    ip: Annotated[str | None, typer.Option("--ip", help="Pivot on an IP address: every account seen from it")] = None,
     timerange: Annotated[str, typer.Option("--timerange", "-t", help="e.g. 90m, 24h, 7d")] = "24h",
     anchor: Annotated[str, typer.Option(help="Window end: 'latest' (offline data), 'now' or ISO timestamp")] = "latest",
     redact: Annotated[bool, typer.Option("--redact", help="Pseudonymize PII before output")] = False,
@@ -116,9 +118,14 @@ def triage(
     db: DbOpt = None,
     author: AuthorOpt = None,
 ) -> None:
-    """Build an investigation dossier for a user or a host."""
-    if (user is None) == (host is None):
-        raise typer.BadParameter("provide exactly one of --user / --host")
+    """Build an investigation dossier for a user, a host or an IP address."""
+    if sum(x is not None for x in (user, host, ip)) != 1:
+        raise typer.BadParameter("provide exactly one of --user / --host / --ip")
+    if ip is not None:
+        try:
+            ip = str(ipaddress.ip_address(ip.strip()))
+        except ValueError as exc:
+            raise typer.BadParameter(f"'{ip}' is not an IP address", param_hint="--ip") from exc
     if fmt not in {"md", "json", "html"}:
         raise typer.BadParameter("--format must be md, json or html")
     try:
@@ -128,10 +135,10 @@ def triage(
 
     cfg = load_rules_config(config)
     loaded = load_events(inputs)
-    kind, target = ("user", user) if user else ("host", host or "")
+    kind, target = ("user", user) if user else ("ip", ip) if ip else ("host", host or "")
     try:
         dossier = build_dossier(
-            loaded.events, kind, target, window, cfg,
+            loaded.events, kind, target or "", window, cfg,
             anchor=_resolve_anchor(anchor), skipped=loaded.skipped,
         )
     except LookupError as exc:

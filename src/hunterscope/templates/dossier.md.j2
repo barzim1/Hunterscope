@@ -58,6 +58,22 @@ _No detections fired in this window._
 None extracted.
 {% endif %}
 
+## {{ "Accounts seen from this IP" if d.kind == "ip" else "Other accounts from the same IPs" }}
+
+{% if d.related %}
+| Account | IP | Failures | Successes | First (UTC) | Last (UTC) |
+|---|---|---:|---:|---|---|
+{% for r in d.related[:25] %}
+| {{ r.user|cell }} | {{ r.ip }} | {{ r.failures }} | {{ r.successes }} | {{ r.first|ts }} | {{ r.last|ts }} |
+{% endfor %}
+{% if d.related|length > 25 %}
+
+_{{ d.related|length - 25 }} more account(s) not shown._
+{% endif %}
+{% else %}
+None: no other account authenticated from the addresses seen here.
+{% endif %}
+
 ## Timeline
 
 Rows marked ⚑ are evidence for at least one finding.

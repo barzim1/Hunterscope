@@ -81,7 +81,9 @@ def fingerprint(f: Finding) -> str:
 
 
 def target_key(kind: str, target: str) -> str:
-    return user_key(target) if kind == "user" else host_key(target)
+    if kind == "user":
+        return user_key(target)
+    return target.strip() if kind == "ip" else host_key(target)
 
 
 @dataclass(frozen=True)
